@@ -1,0 +1,43 @@
+# --- Secrets & environnement ---
+.env
+.env.local
+.env.*.local
+
+# --- Node / Frontend ---
+node_modules/
+dist/
+build/
+.vite/
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+*.egg-info/
+
+# --- Bases de données locales / persistance ---
+chroma_db/
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Fichiers temporaires VS Code / éditeurs ---
+.vscode/*
+!.vscode/extensions.json
+*.code-workspace
+.DS_Store
+Thumbs.db
+
+# --- Fichiers temporaires Python ---
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.tmp
