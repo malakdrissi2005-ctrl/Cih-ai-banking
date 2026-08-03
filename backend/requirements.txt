@@ -1,0 +1,34 @@
+# --- Backend API (perimetre Agent 1 pre-authentification uniquement) ---
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+
+# --- Orchestration Agent 1 (graphe LangGraph) ---
+langgraph>=0.2
+langchain-core>=0.3
+
+# --- RAG FAQ publique (ChromaDB) ---
+chromadb>=0.5
+
+# --- Authentification (session_id opaque en SQLite, PAS de JWT) ---
+# `bcrypt` utilise directement (pas passlib : son backend bcrypt est
+# incompatible avec bcrypt>=4.1, projet non maintenu depuis 2020).
+bcrypt>=4.1
+
+# --- Configuration optionnelle via .env ---
+python-dotenv>=1.0
+
+# --- Tests ---
+pytest>=8.0
+pytest-asyncio>=0.24
+httpx>=0.27
+
+# --- General Agent (questions non bancaires, agents/general_agent/) ---
+google-generativeai
+
+# NOTE : ce fichier ne couvre que le perimetre actuellement implemente
+# (Agent 1 public + fondation d'authentification par session opaque, General
+# Agent Gemini). Les dependances des phases suivantes (JWT pour le jeton de
+# delegation A2A, Agent 2, MCP, n8n) seront ajoutees a
+# DocsContext/03_stack_technique.md puis ici, au moment de leur
+# implementation (regle de contribution CLAUDE.md n1).

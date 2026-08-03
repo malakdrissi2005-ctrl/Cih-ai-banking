@@ -1,0 +1,70 @@
+# CIH AI Banking — Docker Compose (Backend FastAPI + Agent 1, Ollama/Mistral).
+#
+# Perimetre volontairement limite a ce qui existe deja et fonctionne en local
+# (voir CLAUDE.md, DocsContext/03_stack_technique.md) : Agent 2, A2A, MCP,
+# n8n, mock-banking-api et le frontend ne sont pas concernes par ce fichier.
+#
+# Demarrage : docker compose up --build
+# Arret     : docker compose down (ajouter -v pour supprimer aussi le volume
+#             nomme des donnees Ollama — jamais fait par defaut, voir §"volumes").
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: cih-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    # Pas de port publie vers l'hote : seul le service `backend` a besoin de
+    # joindre Ollama, via le reseau interne Compose (`http://ollama:11434`).
+    # Evite aussi tout conflit avec une instance Ollama deja lancee nativement
+    # sur la machine hote (port 11434).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        SERVER_PID=$$!
+        until ollama list >/dev/null 2>&1; do sleep 1; done
+        ollama list | grep -qi "${OLLAMA_MODEL:-mistral}" || ollama pull "${OLLAMA_MODEL:-mistral}"
+        wait $$SERVER_PID
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: cih-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Seule variable surchargee par rapport a .env : a l'interieur du reseau
+      # Compose, Ollama est joignable par son nom de service, jamais par
+      # localhost (qui designerait le conteneur backend lui-meme).
+      OLLAMA_BASE_URL: http://ollama:11434
+      # GOOGLE_API_KEY (General Agent / Gemini, agents/general_agent/) est
+      # deja fournie via `env_file: .env` ci-dessus (voir .env.example) - le
+      # backend est le SEUL service qui appelle l'API Gemini, jamais Ollama.
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      # Conservation des donnees existantes — montees depuis l'hote, jamais
+      # copiees dans l'image (voir backend/Dockerfile) : le conteneur lit et
+      # ecrit exactement les memes fichiers que l'execution locale actuelle.
+      - ./auth.db:/app/auth.db
+      - ./backend/data:/app/backend/data
+      - ./chroma_db:/app/chroma_db
+    restart: unless-stopped
+
+volumes:
+  # Modeles Ollama telecharges (dont mistral) — survit a `docker compose down`
+  # (sans -v) et aux reconstructions d'image, pour ne jamais retelecharger le
+  # modele a chaque demarrage.
+  ollama_data:

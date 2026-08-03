@@ -1,0 +1,57 @@
+# Contexte de build = racine du depot (voir docker-compose.yml). Exclut tout
+# ce qui n'est pas necessaire au conteneur backend, et surtout tout ce qui ne
+# doit jamais etre fige dans une image (secrets, donnees existantes a
+# conserver via volumes — voir backend/Dockerfile, docker-compose.yml).
+
+.git
+.gitignore
+.claude
+
+# --- Hors perimetre de ce conteneur (voir CLAUDE.md, §11 arborescence) ---
+frontend
+mock-banking-api
+mcp-server
+n8n-workflows
+DocsContext
+README.md
+CLAUDE.md
+
+# --- Secrets : jamais dans l'image, injectes par docker-compose (env_file) ---
+.env
+.env.local
+.env.*.local
+
+# --- Donnees existantes a conserver : montees en volumes, jamais copiees ---
+auth.db
+backend/data
+chroma_db
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Python ---
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.venv
+venv
+env
+*.egg-info
+backend/tests
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# --- Node / Frontend (deja exclu via frontend/ ci-dessus, defense en profondeur) ---
+node_modules
+dist
+build
+.vite
+
+# --- Divers ---
+*.log
+logs
+.vscode
+.DS_Store
+Thumbs.db
+*.tmp

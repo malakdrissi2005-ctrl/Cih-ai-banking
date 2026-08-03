@@ -1,0 +1,687 @@
+[{
+"id": "faq_002",
+"question": "Quels documents sont nécessaires pour ouvrir un compte ?",
+"answer": "Généralement une pièce d'identité en cours de validité, un justificatif de domicile et parfois un justificatif de revenus sont demandés. La liste exacte doit être confirmée auprès des canaux officiels de la banque.",
+"category": "ouverture_compte",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_003",
+"question": "Peut-on ouvrir un compte en ligne sans se déplacer en agence ?",
+"answer": "De nombreuses banques proposent une ouverture de compte à distance via leur site ou leur application. La disponibilité de ce service doit être vérifiée auprès des canaux officiels de la banque.",
+"category": "ouverture_compte",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_004",
+"question": "Un mineur peut-il ouvrir un compte bancaire ?",
+"answer": "Un mineur peut généralement disposer d'un compte sous l'autorité d'un représentant légal, avec des conditions spécifiques selon son âge. Les modalités exactes doivent être confirmées auprès des canaux officiels.",
+"category": "ouverture_compte",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_005",
+"question": "Une personne non-résidente peut-elle ouvrir un compte ?",
+"answer": "Certaines banques proposent des comptes adaptés aux non-résidents, avec des pièces justificatives complémentaires. Les conditions précises doivent être vérifiées auprès des canaux officiels de la banque.",
+"category": "ouverture_compte",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_006",
+"question": "Combien de temps prend l'ouverture d'un compte ?",
+"answer": "Le délai d'ouverture varie selon le canal utilisé et la complétude du dossier fourni. Pour un délai précis, il est recommandé de contacter les canaux officiels de la banque.",
+"category": "ouverture_compte",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_007",
+"question": "Existe-t-il des frais liés à l'ouverture d'un compte ?",
+"answer": "Des frais d'ouverture ou de tenue de compte peuvent exister selon le type de compte choisi. Les montants exacts doivent être consultés auprès des canaux officiels de la banque.",
+"category": "ouverture_compte",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_008",
+"question": "Comment modifier les informations liées à mon compte ?",
+"answer": "La modification des informations d'un compte se fait généralement en agence, via l'espace client en ligne ou par un formulaire dédié. La procédure exacte doit être confirmée auprès des canaux officiels.",
+"category": "modification_compte",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_009",
+"question": "Puis-je changer le type de mon compte après son ouverture ?",
+"answer": "Un changement de type de compte est généralement possible sous certaines conditions. Il est recommandé de se renseigner auprès des canaux officiels de la banque pour connaître la procédure applicable.",
+"category": "modification_compte",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_010",
+"question": "Comment ajouter ou modifier un cotitulaire sur un compte ?",
+"answer": "L'ajout ou la modification d'un cotitulaire nécessite généralement une démarche en agence avec les documents d'identité des personnes concernées. La procédure exacte doit être vérifiée auprès de la banque.",
+"category": "modification_compte",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_011",
+"question": "Comment fermer un compte bancaire ?",
+"answer": "La fermeture d'un compte se demande généralement par écrit ou en agence, après régularisation du solde et des opérations en cours. La procédure exacte doit être confirmée auprès des canaux officiels.",
+"category": "fermeture_compte",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_012",
+"question": "Quelles conditions faut-il respecter pour clôturer un compte ?",
+"answer": "Il est généralement nécessaire que le compte ne présente pas de solde négatif et que les moyens de paiement associés soient restitués ou résiliés. Les conditions précises dépendent de la banque.",
+"category": "fermeture_compte",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_013",
+"question": "La fermeture d'un compte engendre-t-elle des frais ?",
+"answer": "Des frais peuvent s'appliquer selon l'ancienneté du compte et les conditions contractuelles. Les montants exacts doivent être vérifiés auprès des canaux officiels de la banque.",
+"category": "fermeture_compte",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_014",
+"question": "Quels documents sont demandés pour toute demande officielle auprès de la banque ?",
+"answer": "Une pièce d'identité valide est généralement exigée pour toute démarche officielle, accompagnée parfois de justificatifs complémentaires selon la nature de la demande.",
+"category": "documents_conditions",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_015",
+"question": "Où puis-je consulter les conditions générales de la banque ?",
+"answer": "Les conditions générales sont habituellement disponibles en agence, sur le site officiel de la banque ou dans l'espace client. Il est recommandé de s'y référer directement.",
+"category": "documents_conditions",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_016",
+"question": "Les conditions générales peuvent-elles changer ?",
+"answer": "Les conditions générales peuvent évoluer dans le temps ; les clients sont généralement informés de toute modification par les canaux officiels de la banque.",
+"category": "documents_conditions",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_017",
+"question": "Quels types de comptes bancaires sont proposés ?",
+"answer": "Les banques proposent généralement des comptes chèques, des comptes d'épargne et des comptes dédiés à certains profils comme les jeunes ou les professionnels. Le détail des offres doit être consulté auprès des canaux officiels.",
+"category": "types_comptes",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_018",
+"question": "Quelle est la différence entre un compte chèques et un compte d'épargne ?",
+"answer": "Un compte chèques est destiné à la gestion des opérations courantes, tandis qu'un compte d'épargne vise à faire fructifier des fonds sur la durée, avec des règles de retrait spécifiques.",
+"category": "types_comptes",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_019",
+"question": "Existe-t-il un compte adapté aux jeunes ou aux étudiants ?",
+"answer": "De nombreuses banques proposent des offres dédiées aux jeunes et aux étudiants, avec des conditions avantageuses. Les détails doivent être consultés auprès des canaux officiels de la banque.",
+"category": "types_comptes",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_020",
+"question": "Existe-t-il un compte dédié aux professionnels ?",
+"answer": "Les banques proposent généralement des comptes spécifiques pour les professionnels et les entreprises, avec des services adaptés à leur activité.",
+"category": "types_comptes",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_021",
+"question": "Quels types de cartes bancaires existent ?",
+"answer": "Il existe généralement des cartes de débit, des cartes de crédit et des cartes prépayées, avec des plafonds et des services variables selon le type choisi.",
+"category": "cartes_bancaires",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_022",
+"question": "Comment demander une nouvelle carte bancaire ?",
+"answer": "Une nouvelle carte bancaire peut généralement être demandée en agence, via l'espace client en ligne ou l'application mobile, selon les services proposés par la banque.",
+"category": "cartes_bancaires",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_023",
+"question": "Quelle est la durée de validité d'une carte bancaire ?",
+"answer": "Une carte bancaire est généralement valable plusieurs années, la date d'expiration étant indiquée directement sur la carte.",
+"category": "cartes_bancaires",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_024",
+"question": "Comment se déroule le renouvellement d'une carte arrivée à expiration ?",
+"answer": "Le renouvellement d'une carte bancaire est généralement automatique avant sa date d'expiration et la nouvelle carte est envoyée par les canaux habituels de la banque.",
+"category": "cartes_bancaires",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_025",
+"question": "Que faire si ma carte n'a pas été renouvelée automatiquement ?",
+"answer": "En l'absence de renouvellement automatique, il est recommandé de contacter le service client ou de se rendre en agence afin de régulariser la situation.",
+"category": "cartes_bancaires",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_026",
+"question": "Une carte bancaire peut-elle être utilisée à l'étranger ?",
+"answer": "De nombreuses cartes bancaires permettent des paiements et retraits à l'étranger, sous réserve des options activées et des conditions contractuelles applicables.",
+"category": "cartes_bancaires",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_027",
+"question": "Que faire en cas de perte de ma carte bancaire ?",
+"answer": "En cas de perte, il est recommandé de faire opposition immédiatement via le service client, l'application mobile ou l'espace en ligne, afin de bloquer la carte.",
+"category": "carte_perte_vol_blocage",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_028",
+"question": "Que faire en cas de vol de ma carte bancaire ?",
+"answer": "En cas de vol, il est important de faire opposition sans délai auprès de la banque et de signaler l'incident, selon les procédures officielles en vigueur.",
+"category": "carte_perte_vol_blocage",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_029",
+"question": "Comment bloquer une carte bancaire ?",
+"answer": "Une carte bancaire peut généralement être bloquée depuis l'application mobile, l'espace client en ligne ou en contactant le service client.",
+"category": "carte_perte_vol_blocage",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_030",
+"question": "Un blocage de carte peut-il être annulé ?",
+"answer": "Selon la situation, un blocage temporaire peut parfois être levé, tandis qu'une opposition définitive nécessite l'émission d'une nouvelle carte. Il convient de vérifier la procédure auprès de la banque.",
+"category": "carte_perte_vol_blocage",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_031",
+"question": "Que faire si ma carte est avalée par un distributeur ?",
+"answer": "Si une carte est retenue par un distributeur, il est recommandé de contacter immédiatement le service client de la banque pour connaître la marche à suivre.",
+"category": "carte_perte_vol_blocage",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_032",
+"question": "Que faire si j'ai oublié mon code PIN ?",
+"answer": "En cas d'oubli du code PIN, il est possible de contacter le service client ou de se rendre en agence afin d'obtenir une procédure de réinitialisation.",
+"category": "code_pin_securite",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_033",
+"question": "Comment changer mon code PIN ?",
+"answer": "Le changement du code PIN est généralement possible depuis un distributeur automatique de la banque ou via l'application mobile, selon les services disponibles.",
+"category": "code_pin_securite",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_034",
+"question": "Que se passe-t-il si je saisis un code PIN erroné plusieurs fois ?",
+"answer": "Après plusieurs saisies erronées, la carte est généralement bloquée par mesure de sécurité. Il faut alors contacter la banque pour la débloquer ou en demander une nouvelle.",
+"category": "code_pin_securite",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_035",
+"question": "Est-il prudent de noter son code PIN avec sa carte ?",
+"answer": "Non, il est fortement déconseillé de noter son code PIN avec sa carte ou de le communiquer à qui que ce soit, y compris à la banque elle-même.",
+"category": "code_pin_securite",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_036",
+"question": "Comment télécharger l'application mobile de la banque ?",
+"answer": "L'application mobile est généralement disponible sur les magasins d'applications officiels correspondant au système d'exploitation du téléphone utilisé.",
+"category": "application_mobile",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_037",
+"question": "L'application mobile est-elle gratuite ?",
+"answer": "Le téléchargement de l'application mobile est généralement gratuit ; certains frais liés à l'utilisation des données mobiles peuvent s'appliquer selon l'opérateur.",
+"category": "application_mobile",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_038",
+"question": "Quelles fonctionnalités sont disponibles sur l'application mobile ?",
+"answer": "L'application mobile permet généralement de consulter ses comptes, effectuer des opérations courantes, gérer ses cartes et contacter le service client, selon les fonctionnalités proposées par la banque.",
+"category": "application_mobile",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_039",
+"question": "Que faire si l'application mobile ne fonctionne pas correctement ?",
+"answer": "En cas de dysfonctionnement, il est recommandé de vérifier sa connexion internet, de mettre à jour l'application, puis de contacter le support technique si le problème persiste.",
+"category": "application_mobile",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_040",
+"question": "L'application mobile fonctionne-t-elle sans connexion internet ?",
+"answer": "Une connexion internet est généralement nécessaire pour accéder aux services de l'application mobile, à l'exception de certaines fonctions limitées hors ligne.",
+"category": "application_mobile",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_041",
+"question": "Qu'est-ce que la banque en ligne ?",
+"answer": "La banque en ligne désigne l'ensemble des services bancaires accessibles à distance via internet, sans nécessiter de déplacement en agence.",
+"category": "banque_en_ligne",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_042",
+"question": "Quels services sont accessibles depuis la banque en ligne ?",
+"answer": "La banque en ligne permet généralement de consulter ses comptes, réaliser des opérations courantes et gérer certains documents, selon l'offre proposée par la banque.",
+"category": "banque_en_ligne",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_043",
+"question": "La banque en ligne est-elle sécurisée ?",
+"answer": "Les plateformes bancaires en ligne intègrent généralement des mécanismes de sécurité comme le chiffrement des données et l'authentification renforcée.",
+"category": "banque_en_ligne",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_044",
+"question": "Comment créer un espace client ?",
+"answer": "La création d'un espace client se fait généralement lors de l'ouverture du compte ou via une procédure d'activation disponible sur le site ou l'application de la banque.",
+"category": "espace_client",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_045",
+"question": "Que faire si je ne parviens pas à me connecter à mon espace client ?",
+"answer": "En cas de difficulté de connexion, il est recommandé de vérifier ses identifiants, de réinitialiser son mot de passe, puis de contacter le service client si nécessaire.",
+"category": "espace_client",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_046",
+"question": "Comment réinitialiser mon mot de passe ?",
+"answer": "La réinitialisation du mot de passe se fait généralement via un lien dédié sur la page de connexion, en suivant les instructions envoyées par la banque.",
+"category": "espace_client",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_047",
+"question": "Que faire si mon compte client est temporairement bloqué après plusieurs tentatives ?",
+"answer": "Après plusieurs tentatives de connexion échouées, l'accès est généralement suspendu temporairement par sécurité. Il convient d'attendre le délai indiqué ou de contacter le service client.",
+"category": "espace_client",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_048",
+"question": "Puis-je avoir un seul espace client pour plusieurs comptes ?",
+"answer": "De nombreuses banques permettent de rattacher plusieurs comptes à un même espace client, sous réserve d'être titulaire ou cotitulaire des comptes concernés.",
+"category": "espace_client",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_049",
+"question": "Comment reconnaître une tentative de phishing ?",
+"answer": "Une tentative de phishing se manifeste souvent par un message urgent demandant des informations confidentielles, avec des liens ou expéditeurs suspects. La prudence est recommandée.",
+"category": "securite_fraude",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_050",
+"question": "La banque demande-t-elle un code confidentiel par téléphone ou par e-mail ?",
+"answer": "Non, une banque ne demande jamais de code confidentiel, de mot de passe ou de code de carte par téléphone, e-mail ou message.",
+"category": "securite_fraude",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_051",
+"question": "Que faire si je reçois un message suspect prétendant venir de la banque ?",
+"answer": "Il est recommandé de ne cliquer sur aucun lien, de ne transmettre aucune information, et de signaler le message aux canaux officiels de sécurité de la banque.",
+"category": "securite_fraude",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_052",
+"question": "Comment sont protégées mes données personnelles ?",
+"answer": "Les banques appliquent généralement des mesures techniques et organisationnelles pour protéger les données personnelles, conformément à la réglementation en vigueur.",
+"category": "securite_fraude",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_053",
+"question": "Que faire si je soupçonne une fraude sur mon compte ?",
+"answer": "En cas de suspicion de fraude, il est important de contacter immédiatement le service client de la banque afin de sécuriser le compte et signaler l'incident.",
+"category": "securite_fraude",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_054",
+"question": "Comment mettre à jour mon numéro de téléphone ?",
+"answer": "La mise à jour du numéro de téléphone se fait généralement via l'espace client, l'application mobile ou en agence, selon les procédures de la banque.",
+"category": "informations_personnelles",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_055",
+"question": "Comment mettre à jour mon adresse postale ?",
+"answer": "La mise à jour de l'adresse postale nécessite généralement de fournir un justificatif de domicile récent, via l'espace client ou en agence.",
+"category": "informations_personnelles",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_056",
+"question": "Comment signaler un changement de situation personnelle (nom, état civil) ?",
+"answer": "Un changement d'état civil doit généralement être signalé à la banque avec les justificatifs officiels correspondants, via l'agence ou les canaux dédiés.",
+"category": "informations_personnelles",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_057",
+"question": "Pourquoi est-il important de tenir mes informations personnelles à jour ?",
+"answer": "Des informations à jour permettent à la banque de vous contacter efficacement, de sécuriser votre compte et de respecter ses obligations réglementaires.",
+"category": "informations_personnelles",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_058",
+"question": "Comment trouver l'agence la plus proche ?",
+"answer": "La localisation des agences est généralement disponible sur le site officiel de la banque ou via son application mobile, dans une rubrique dédiée aux agences.",
+"category": "agences_guichets",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_059",
+"question": "Quels services sont disponibles dans les guichets automatiques ?",
+"answer": "Les guichets automatiques permettent généralement de retirer de l'argent, consulter son solde et parfois effectuer des dépôts, selon les équipements disponibles.",
+"category": "agences_guichets",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_060",
+"question": "Puis-je effectuer un dépôt d'espèces dans un distributeur automatique ?",
+"answer": "Certains distributeurs permettent le dépôt d'espèces ou de chèques, selon les équipements et les services proposés par la banque.",
+"category": "agences_guichets",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_061",
+"question": "Les agences sont-elles ouvertes tous les jours ?",
+"answer": "Les horaires d'ouverture varient selon les agences. Il est recommandé de consulter les canaux officiels de la banque pour connaître les horaires précis.",
+"category": "agences_guichets",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_062",
+"question": "Comment contacter le service client ?",
+"answer": "Le service client est généralement joignable par téléphone, via l'espace en ligne, l'application mobile ou en agence. Les coordonnées exactes figurent sur les canaux officiels de la banque.",
+"category": "service_client",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_063",
+"question": "Comment déposer une réclamation ?",
+"answer": "Une réclamation peut généralement être déposée en agence, via l'espace client en ligne ou par écrit, selon la procédure définie par la banque.",
+"category": "service_client",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_064",
+"question": "Quel est le délai de traitement d'une réclamation ?",
+"answer": "Le délai de traitement varie selon la nature de la réclamation. Il est recommandé de se référer aux informations communiquées par les canaux officiels de la banque.",
+"category": "service_client",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_065",
+"question": "Puis-je suivre l'état d'avancement de ma réclamation ?",
+"answer": "Le suivi d'une réclamation est généralement possible via l'espace client ou en contactant directement le service concerné.",
+"category": "service_client",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_066",
+"question": "Comment fonctionne un virement bancaire ?",
+"answer": "Un virement bancaire consiste à transférer des fonds d'un compte vers un autre, en indiquant les coordonnées bancaires du bénéficiaire et le montant souhaité.",
+"category": "virements",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_067",
+"question": "Quelle est la différence entre un virement interne et un virement externe ?",
+"answer": "Un virement interne s'effectue entre comptes de la même banque, tandis qu'un virement externe concerne un compte détenu dans un autre établissement.",
+"category": "virements",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_068",
+"question": "Quel est le délai habituel d'exécution d'un virement ?",
+"answer": "Le délai d'exécution varie selon le type de virement et les établissements concernés. Il est recommandé de vérifier ce délai auprès des canaux officiels de la banque.",
+"category": "virements",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_069",
+"question": "Un virement peut-il être annulé après son exécution ?",
+"answer": "Une fois exécuté, un virement est généralement difficile à annuler. En cas d'erreur, il est recommandé de contacter rapidement le service client de la banque.",
+"category": "virements",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_070",
+"question": "Qu'est-ce qu'un virement permanent ?",
+"answer": "Un virement permanent est un virement automatique et récurrent, programmé pour être exécuté à intervalles réguliers, par exemple chaque mois.",
+"category": "virements",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_071",
+"question": "Quels sont les moyens disponibles pour retirer de l'argent ?",
+"answer": "Les retraits peuvent généralement s'effectuer via un distributeur automatique, un guichet en agence, ou d'autres services proposés par la banque.",
+"category": "retraits_depots_paiements",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_072",
+"question": "Comment fonctionne un dépôt sur un compte bancaire ?",
+"answer": "Un dépôt peut généralement être effectué en espèces ou par chèque, en agence ou via un distributeur équipé de cette fonctionnalité.",
+"category": "retraits_depots_paiements",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_073",
+"question": "Existe-t-il des plafonds généraux pour les retraits et paiements ?",
+"answer": "Des plafonds existent généralement pour les retraits et paiements, variables selon le type de carte et de compte. Les montants exacts doivent être vérifiés auprès des canaux officiels.",
+"category": "retraits_depots_paiements",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_074",
+"question": "Quels moyens de paiement sont généralement acceptés ?",
+"answer": "Les moyens de paiement courants incluent la carte bancaire, le virement, le chèque et parfois les solutions de paiement mobile, selon les services proposés.",
+"category": "retraits_depots_paiements",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_075",
+"question": "Comment fonctionne le paiement par chèque ?",
+"answer": "Le paiement par chèque consiste à remettre un document signé autorisant le débit d'un montant déterminé sur le compte de l'émetteur au profit du bénéficiaire.",
+"category": "cheques",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_076",
+"question": "Que faire en cas de perte d'un chéquier ?",
+"answer": "En cas de perte d'un chéquier, il est recommandé de faire opposition rapidement auprès de la banque afin d'éviter toute utilisation frauduleuse.",
+"category": "cheques",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_077",
+"question": "Un chèque peut-il être annulé après son émission ?",
+"answer": "Une opposition sur un chèque est généralement possible dans certains cas prévus par la réglementation, comme la perte, le vol ou l'utilisation frauduleuse.",
+"category": "cheques",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_078",
+"question": "Comment activer les notifications liées à mon compte ?",
+"answer": "Les notifications peuvent généralement être activées depuis les paramètres de l'application mobile ou de l'espace client en ligne.",
+"category": "notifications_alertes",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_079",
+"question": "À quoi servent les alertes de sécurité bancaire ?",
+"answer": "Les alertes de sécurité permettent d'être informé rapidement d'opérations inhabituelles ou de tentatives de connexion suspectes sur le compte.",
+"category": "notifications_alertes",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_080",
+"question": "Où puis-je consulter les frais et tarifs bancaires ?",
+"answer": "Les frais et tarifs bancaires sont généralement disponibles dans la brochure tarifaire officielle de la banque, en agence ou sur son site officiel.",
+"category": "frais_tarifs",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_081",
+"question": "Les frais bancaires sont-ils identiques pour tous les comptes ?",
+"answer": "Non, les frais varient généralement selon le type de compte, les services associés et les options souscrites. Il est recommandé de consulter les canaux officiels de la banque.",
+"category": "frais_tarifs",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_082",
+"question": "Que faire en cas de problème technique avec l'application ou le site ?",
+"answer": "En cas de problème technique, il est conseillé de vérifier sa connexion, de redémarrer l'application, puis de contacter le support technique si la difficulté persiste.",
+"category": "problemes_techniques",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_083",
+"question": "Que faire si une transaction semble bloquée techniquement ?",
+"answer": "Si une transaction semble bloquée, il est recommandé de patienter quelques instants avant de contacter le service client si la situation persiste.",
+"category": "problemes_techniques",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_084",
+"question": "Est-il possible d'effectuer des opérations bancaires à l'international ?",
+"answer": "De nombreuses banques permettent des opérations internationales, comme des virements ou des paiements à l'étranger, selon les services souscrits.",
+"category": "operations_internationales",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_085",
+"question": "Des frais spécifiques s'appliquent-ils aux opérations internationales ?",
+"answer": "Des frais spécifiques peuvent s'appliquer aux opérations internationales. Les montants exacts doivent être vérifiés auprès des canaux officiels de la banque.",
+"category": "operations_internationales",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_086",
+"question": "Quels services sont proposés aux particuliers ?",
+"answer": "Les banques proposent généralement aux particuliers des comptes courants, des solutions d'épargne, des cartes bancaires et des services bancaires en ligne.",
+"category": "services_clientele_segments",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_087",
+"question": "Quels services sont proposés aux professionnels et entreprises ?",
+"answer": "Les offres destinées aux professionnels incluent généralement des comptes dédiés, des solutions de gestion des flux et des services adaptés à leur activité.",
+"category": "services_clientele_segments",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_088",
+"question": "Quels avantages existent pour les étudiants ?",
+"answer": "Des offres avec des conditions adaptées sont souvent proposées aux étudiants. Les avantages précis doivent être consultés auprès des canaux officiels de la banque.",
+"category": "services_clientele_segments",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_089",
+"question": "Comment devenir client de la banque ?",
+"answer": "Pour devenir client, il est généralement nécessaire d'ouvrir un compte en agence ou en ligne, en fournissant les documents requis.",
+"category": "questions_generales",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_090",
+"question": "Est-il possible de gérer plusieurs comptes depuis un seul espace client ?",
+"answer": "Oui, il est généralement possible de gérer plusieurs comptes depuis un même espace client, sous réserve d'être titulaire de ces comptes.",
+"category": "questions_generales",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_091",
+"question": "Comment obtenir un relevé de compte ?",
+"answer": "Un relevé de compte peut généralement être obtenu via l'espace client en ligne, l'application mobile ou en agence, selon les préférences choisies.",
+"category": "questions_generales",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_092",
+"question": "Qu'est-ce qu'un RIB et à quoi sert-il ?",
+"answer": "Un RIB (Relevé d'Identité Bancaire) est un document contenant les coordonnées bancaires d'un compte, utilisé pour recevoir des virements ou mettre en place des prélèvements.",
+"category": "questions_generales",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_093",
+"question": "La banque propose-t-elle des produits d'assurance ?",
+"answer": "De nombreuses banques proposent des produits d'assurance complémentaires. Le détail des offres disponibles doit être consulté auprès des canaux officiels.",
+"category": "produits_complementaires",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_094",
+"question": "La banque propose-t-elle des solutions de financement ou de crédit ?",
+"answer": "Des solutions de financement peuvent être proposées selon le profil du client et le type de projet. Les conditions précises doivent être vérifiées auprès de la banque.",
+"category": "produits_complementaires",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_095",
+"question": "Comment fonctionne le change de devises en agence ?",
+"answer": "Le change de devises permet généralement de convertir une monnaie en une autre selon un taux appliqué par la banque, disponible en agence ou via des services dédiés.",
+"category": "produits_complementaires",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_096",
+"question": "Qu'est-ce que l'authentification à double facteur ?",
+"answer": "L'authentification à double facteur est un mécanisme de sécurité combinant deux éléments de vérification, comme un mot de passe et un code envoyé sur un appareil, pour protéger l'accès à un compte.",
+"category": "produits_complementaires",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_097",
+"question": "Pourquoi la banque demande-t-elle parfois une vérification d'identité supplémentaire ?",
+"answer": "Une vérification d'identité supplémentaire peut être demandée pour renforcer la sécurité de certaines opérations ou respecter des obligations réglementaires.",
+"category": "produits_complementaires",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_098",
+"question": "Que faire si je change de pays de résidence ?",
+"answer": "Un changement de pays de résidence doit généralement être signalé à la banque, car il peut avoir des implications sur le compte et les services associés.",
+"category": "produits_complementaires",
+"source": "faq_academique_demo"
+},
+{
+"id": "faq_099",
+"question": "Comment mettre à jour mes documents d'identité auprès de la banque ?",
+"answer": "La mise à jour des documents d'identité se fait généralement en agence ou via l'espace client en ligne, en fournissant une pièce d'identité valide.",
+"category": "produits_complementaires",
+"source": "faq_academique_demo"
+}
+]

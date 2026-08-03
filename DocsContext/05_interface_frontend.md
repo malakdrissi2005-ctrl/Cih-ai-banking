@@ -1,670 +1,435 @@
-# 05 — Interface Frontend & UI/UX : CIH AI Banking
+# 05 — Interface Frontend & UI/UX : CIH AI Banking — Démonstration
 
-> **Type de document** : Spécification UI/UX et guide de développement Frontend **Prérequis** : `01_projet_overview.md`, `02_architecture_multi_agents.md`, `03_stack_technique.md` **Rôle de ce document** : Servir de référence complète pour reproduire fidèlement l'expérience de l'application CIH Mobile en React/TailwindCSS, gérer les deux états graphiques (non-authentifié / authentifié), et intégrer le widget de chat multi-agents comme composant transverse de l'interface.
-
----
-
-## 1\. Rôle du document
-
-Ce document fixe, pour chaque écran et chaque composant :
-
-- la classe CSS/Tailwind exacte à appliquer ;  
-- l'état React nécessaire et sa provenance ;  
-- le comportement du widget de chat selon le contexte (session authentifiée ou non) ;  
-- la structure de composants à respecter, avec leurs props.
-
->   
-> Aucune valeur de couleur, d'espacement ou d'arrondi ne doit être improvisée pendant le développement : tout écart par rapport aux classes listées ici doit être proposé comme modification de ce document avant d'être codé.
+> **Type de document** : Spécification UI/UX (référence visuelle, structurelle et de synchronisation du frontend) **Prérequis** : `01_projet_overview.md`, `02_architecture_multi_agents.md`, `03_stack_technique.md` **Rôle de ce document** : Définir l'unique application CIH AI Banking et ses deux rendus simultanés (mobile réel et adaptation desktop agrandie), les règles visuelles, la synchronisation totale de l'état, et l'architecture des composants. Ce document est la référence officielle utilisée par Claude Code pour implémenter le frontend ; toute décision non couverte ici doit être ajoutée au document avant d'être codée.
 
 ---
 
-## 2\. Charte graphique & Design System CIH Bank
+## 1\. Objectif fondamental
 
-### 2.1 Palette de couleurs
+CIH AI Banking est **avant tout une application mobile**. Sur un ordinateur, la démonstration académique affiche simultanément :
 
-Extension à ajouter dans `tailwind.config.js` :
+1. à **gauche** : le véritable rendu mobile de l'application, interactif, dans un cadre de téléphone réaliste ;  
+2. à **droite** : une **adaptation desktop agrandie de cette même application**, destinée à rendre la démonstration plus lisible.
 
-// tailwind.config.js
-
-module.exports \= {
-
-  content: \["./src/\*\*/\*.{js,jsx}"\],
-
-  theme: {
-
-    extend: {
-
-      colors: {
-
-        "cih-orange": "\#F26522",
-
-        "cih-orange-dark": "\#D9530F",
-
-        "cih-orange-light": "\#FDECE2",
-
-        "cih-blue": "\#005CA9",
-
-        "cih-blue-dark": "\#00427A",
-
-        "cih-blue-light": "\#E6F0F9",
-
-        "cih-bg-dark-from": "\#0B1E33",
-
-        "cih-bg-dark-to": "\#142A45",
-
-        "cih-surface": "\#F8FAFC",
-
-      },
-
-    },
-
-  },
-
-};
-
-| Rôle | Token Tailwind | Hex | Usage |
-| :---- | :---- | :---- | :---- |
-| Accent principal | `cih-orange` | `#F26522` | Boutons d'action, badges, éléments actifs, bulles utilisateur du chat |
-| Accent secondaire | `cih-blue` | `#005CA9` | Titres, icônes secondaires, header, liens |
-| Fond écran de connexion | `cih-bg-dark-from` → `cih-bg-dark-to` | `#0B1E33` → `#142A45` | Dégradé de fond de l'écran non-authentifié |
-| Fond dashboard | `white` / `cih-surface` | `#FFFFFF` / `#F8FAFC` | Fond des écrans authentifiés |
-
-### 2.2 Typographie & style de composants
-
-- **Cartes** : toujours `rounded-2xl`, jamais `rounded-md` ou `rounded-lg` pour un conteneur de premier niveau.  
-- **Élévation** : `shadow-md` par défaut sur les cartes, `shadow-xl` réservé à la fenêtre de chat dépliée et aux modales.  
-- **Police** : police système par défaut de Tailwind (`font-sans`) ; poids `font-semibold` pour les titres de carte, `font-bold` pour les montants.  
-- **Icônes** : exclusivement `lucide-react`, taille standard `w-5 h-5` en contexte de liste, `w-6 h-6` en header, `w-7 h-7` dans le FAB.  
-- **Espacements** : rythme vertical en multiples de `4` (Tailwind) — `gap-3`, `gap-4`, `p-4`, `p-6`. Éviter les valeurs arbitraires (`p-[13px]`).  
-- **Transitions** : `transition` \+ `duration-200` sur tout élément interactif (bouton, carte cliquable, FAB).
+La partie desktop n'est pas une application différente. Le téléphone n'est pas une image décorative : il est pleinement interactif. Les deux vues représentent en permanence exactement la même application, la même session, le même utilisateur, le même état d'authentification, le même écran actif, les mêmes données, la même conversation, le même agent actif et la même opération en cours (voir §5, synchronisation totale).
 
 ---
 
-## 3\. Écran 1 — Vue non-authentifiée (Landing / Connexion)
-
-### 3.1 Structure générale
-
-\<div className="min-h-screen bg-gradient-to-b from-cih-bg-dark-from to-cih-bg-dark-to flex flex-col"\>
-
-  \<Navbar authenticated={false} /\>
-
-  \<LoginForm /\>
-
-  \<PublicServicesGrid /\>
-
-  \<ChatWidget mode="public" /\>
-
-\</div\>
-
-### 3.2 Header (`Navbar`, variante non-authentifiée)
-
-\<header className="flex items-center justify-between px-4 pt-6 pb-4"\>
-
-  \<button aria-label="Ouvrir le menu" className="text-white/90"\>
-
-    \<Menu className="w-6 h-6" /\>
-
-  \</button\>
-
-  \<img src="/logo-cih-white.svg" alt="CIH Bank" className="h-8" /\>
-
-  \<ShieldCheck className="w-6 h-6 text-cih-orange" aria-hidden="true" /\>
-
-\</header\>
-
-### 3.3 Formulaire d'authentification (`LoginForm`)
-
-\<div className="mx-4 mt-6 bg-white rounded-2xl shadow-md p-6 space-y-5"\>
-
-  \<div\>
-
-    \<label className="block text-xs font-medium text-gray-500 mb-1"\>Identifiant\</label\>
-
-    \<input
-
-      type="text"
-
-      placeholder="Identifiant client"
-
-      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm
-
-                 focus:outline-none focus:ring-2 focus:ring-cih-orange focus:border-transparent"
-
-    /\>
-
-  \</div\>
-
-  \<div\>
-
-    \<div className="flex items-center justify-between mb-1"\>
-
-      \<label className="text-xs font-medium text-gray-500"\>Mot de passe\</label\>
-
-      \<a href="\#" className="text-xs text-cih-blue font-medium"\>Oublié ?\</a\>
-
-    \</div\>
-
-    \<input
-
-      type="password"
-
-      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm
-
-                 focus:outline-none focus:ring-2 focus:ring-cih-orange focus:border-transparent"
-
-    /\>
-
-  \</div\>
-
-  \<div className="flex items-center justify-between"\>
-
-    \<span className="text-sm text-gray-600"\>Se souvenir de moi\</span\>
-
-    {/\* Toggle : conteneur w-10 h-6, pastille w-4 h-4, translate-x-4 à l'état actif \*/}
-
-    \<button
-
-      role="switch"
-
-      aria-checked={remember}
-
-      onClick={() \=\> setRemember(\!remember)}
-
-      className={\`w-10 h-6 rounded-full transition ${remember ? "bg-cih-orange" : "bg-gray-300"}\`}
-
-    \>
-
-      \<span className={\`block w-4 h-4 bg-white rounded-full shadow transform transition ${remember ? "translate-x-5" : "translate-x-1"}\`} /\>
-
-    \</button\>
-
-  \</div\>
-
-  \<button className="w-full bg-cih-orange hover:bg-cih-orange-dark text-white font-semibold
-
-                     py-3 rounded-xl transition duration-200"\>
-
-    Connexion
-
-  \</button\>
-
-\</div\>
-
-**État React requis** : `identifiant`, `motDePasse`, `remember` (boolean), `isSubmitting`, `loginError`.
-
-### 3.4 Grille de services publics (2×2)
-
-\<div className="grid grid-cols-2 gap-3 px-4 mt-6"\>
-
-  {publicServices.map((s) \=\> (
-
-    \<button key={s.label} className="bg-white rounded-2xl shadow-md p-4 flex flex-col items-center gap-2
-
-                                       hover:shadow-lg transition duration-200"\>
-
-      \<s.icon className="w-6 h-6 text-cih-blue" /\>
-
-      \<span className="text-xs font-medium text-gray-700 text-center"\>{s.label}\</span\>
-
-    \</button\>
-
-  ))}
-
-\</div\>
-
-`publicServices` : `[{ icon: Building2, label: "Portail Immobilier" }, { icon: ShieldCheck, label: "Assurances" }, { icon: MapPin, label: "Agences" }, { icon: Handshake, label: "Partenaires" }]`.
-
-### 3.5 Comportement du chat en mode public
-
-- Le widget (`ChatWidget mode="public"`) est monté avec `mode="public"` — cette seule prop suffit à garantir qu'aucune bascule vers un affichage transactionnel n'est possible dans cet état (pas de prop `agent` distincte, voir §6.2 pour la table complète des props).  
-- L'Agent 1 répond aux questions générales via RAG (ChromaDB) sans en-tête d'authentification.  
-- Si l'utilisateur pose une question personnelle ou sensible (solde, virement), le message assistant retourné contient un champ `requires_auth: true`. Le composant `ChatMessage` détecte ce champ et :  
-  1. affiche le message d'invitation ( *« Pour consulter cette information, connectez-vous à votre espace client. »* ) ;  
-  2. déclenche `onRequireAuth()`, remonté par `ChatWidget` jusqu'au composant racine, qui applique une classe de surbrillance temporaire sur `LoginForm` :
-
-\<div className={\`mx-4 mt-6 bg-white rounded-2xl shadow-md p-6 space-y-5 transition
-
-                 ${highlightLogin ? "ring-2 ring-cih-orange animate-pulse" : ""}\`}\>
-
-La surbrillance (`highlightLogin`, état booléen levé dans le composant parent) se retire automatiquement après 2,5 secondes ou dès la première frappe dans le formulaire.
+## 2\. Rôle des trois images de référence
+
+### Image 1 — Connexion CIH
+
+Définit l'identité visuelle **avant authentification** :
+
+- fond en dégradé orange, rouge, bleu et violet ;  
+- en-tête compact ;  
+- titre « Bienvenue » ;  
+- panneau sombre semi-transparent ;  
+- champs identifiant et mot de passe ;  
+- lien « Oublié ? » ;  
+- option « Se souvenir de moi » ;  
+- bouton orange « Connexion » ;  
+- section « Nos services » en grille 2 × 2\.
+
+### Image 2 — Dashboard CIH
+
+Définit l'identité visuelle **après authentification** :
+
+- fond blanc ;  
+- en-tête compact ;  
+- ligne orange fine ;  
+- salutation orange ;  
+- compte et solde centrés ;  
+- bouton afficher/masquer le solde ;  
+- grille de services 2 × 3 ;  
+- icônes orange ;  
+- séparateurs orange clair ;  
+- transactions récentes ;  
+- navigation inférieure.
+
+### Image 3 — Téléphone \+ dashboard desktop
+
+Définit **uniquement** la présentation dans le navigateur :
+
+- téléphone à gauche ;  
+- interface desktop à droite ;  
+- les deux visibles simultanément ;  
+- ensemble centré et compact ;  
+- proportions professionnelles.
+
+La marque, les couleurs, le logo, VISA et les données visibles sur cette image de référence ne sont en aucun cas repris : seule la disposition générale (position du téléphone, position du panneau desktop, composition centrée et compacte) est retenue.
 
 ---
 
-## 4\. Écran 2 — Vue authentifiée (Dashboard Client)
+## 3\. Identité académique (obligatoire)
 
-### 4.1 Structure générale
+| Élément | Valeur |
+| :---- | :---- |
+| Nom du projet affiché | `CIH AI Banking — Démonstration` |
+| Mention obligatoire, visible en permanence | `Démonstration académique — aucune opération réelle` |
 
-\<div className="min-h-screen bg-cih-surface flex flex-col"\>
+Interdictions strictes, sans exception :
 
-  \<Navbar authenticated={true} userName="MME MALAK DRISSI" /\>
+- aucun logo officiel CIH ;  
+- aucun logo VISA ni d'un autre réseau de paiement ;  
+- aucune donnée bancaire réelle ;  
+- aucun numéro provenant des captures de référence ;  
+- aucun nom provenant des captures de référence ;  
+- aucune opération réelle.
 
-  \<AccountCard account={account} /\>
-
-  \<ShortcutGrid /\>
-
-  \<ChatWidget mode="authenticated" jwtToken={token} /\>
-
-\</div\>
-
-### 4.2 Header & salutation
-
-\<div className="px-4 pt-4 pb-2 border-b-2 border-cih-orange"\>
-
-  \<p className="text-cih-orange font-bold text-sm"\>Bonjour {userName} \!\</p\>
-
-\</div\>
-
-`userName` est injecté dynamiquement depuis la réponse d'authentification (`/auth/login`), jamais codé en dur.
-
-### 4.3 Carte récapitulative de compte (`AccountCard`)
-
-\<div className="mx-4 mt-4 bg-white rounded-2xl shadow-md border border-gray-100 p-5 text-center"\>
-
-  \<p className="text-xs text-gray-500"\>{account.type}\</p\>
-
-  \<p className="text-cih-blue font-medium text-sm mt-1"\>{account.number}\</p\>
-
-  \<p className="text-\[11px\] text-gray-400 mt-4"\>Solde\</p\>
-
-  \<div className="flex items-center justify-center gap-2 mt-1"\>
-
-    \<span className="text-xl font-bold text-gray-900 tracking-wide"\>
-
-      {balanceVisible ? \`${account.balance.toLocaleString("fr-FR")} MAD\` : "\*\*\*\* MAD"}
-
-    \</span\>
-
-    \<button onClick={() \=\> setBalanceVisible(\!balanceVisible)} aria-label="Afficher/masquer le solde"\>
-
-      \<Eye className="w-5 h-5 text-cih-blue" /\>
-
-    \</button\>
-
-  \</div\>
-
-\</div\>
-
-Exemple de données : `{ type: "Compte chèques", number: "6120491211011600", balance: 15420.50 }`. `balanceVisible` initialisé à `false` (le solde reste masqué par défaut à chaque ouverture d'écran).
-
-### 4.4 Grille de raccourcis (2×3)
-
-\<div className="grid grid-cols-2 gap-3 px-4 mt-5"\>
-
-  {shortcuts.map((s) \=\> (
-
-    \<button key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-md
-
-                                       p-4 flex flex-col items-center gap-2 hover:bg-cih-orange-light
-
-                                       transition duration-200"\>
-
-      \<s.icon className="w-6 h-6 text-cih-orange" /\>
-
-      \<span className="text-xs font-medium text-gray-700 text-center"\>{s.label}\</span\>
-
-    \</button\>
-
-  ))}
-
-\</div\>
-
-`shortcuts` : `Mes Cartes`, `Effectuer un virement`, `Effectuer une recharge`, `Payez vos factures`, `Financer mon projet`, `Payer vignette` — chacun avec son icône `lucide-react` correspondante (`CreditCard`, `ArrowLeftRight`, `Smartphone`, `Receipt`, `Home`, `Car`).
-
-### 4.5 Comportement du chat en mode authentifié
-
-- `ChatWidget` reçoit le prop `jwtToken`. Chaque appel réseau vers `/chat` inclut systématiquement l'en-tête :
-
-fetch("/api/chat", {
-
-  method: "POST",
-
-  headers: {
-
-    "Content-Type": "application/json",
-
-    Authorization: \`Bearer ${jwtToken}\`,
-
-  },
-
-  body: JSON.stringify({ message, conversation\_id }),
-
-});
-
-- La consultation du solde en temps réel est autorisée : l'Agent 1 peut invoquer ses outils de lecture seule et la réponse est affichée comme un message assistant standard (`ChatMessage type="text"`).  
-- Lorsque le Backend signale, via le champ `active_agent` de la réponse, un passage à `"secure_operation"`, `ChatWidget` :  
-  1. met à jour l'en-tête de la fenêtre de chat (nom affiché : *Agent Transactionnel CIH*, voir §5.2) ;  
-  2. rend les messages suivants avec des composants riches selon leur `type` :  
-     - `type: "transfer_confirmation"` → `<TransferConfirmationCard data={message.data} onConfirm={...} onCancel={...} />`  
-     - `type: "otp_request"` → `<OtpModal onSubmit={...} onResend={...} expiresIn={message.data.expiresIn} />`  
-  3. revient automatiquement à l'affichage *Agent FAQ CIH* dès que le Backend renvoie `active_agent: "assistant"` (fin du scénario transactionnel, succès ou échec).
-
-> **`active_agent` est un indicateur d'affichage, jamais un canal de communication.** Que sa valeur soit `"assistant"` ou `"secure_operation"`, le frontend continue de communiquer **exclusivement** avec FastAPI (`POST /api/chat`) — il ne dialogue jamais directement avec l'Agent 1, l'Agent 2, ou tout composant interne. Ces deux valeurs remplacent les anciennes valeurs internes `"agent_1"`/`"agent_2"` du `SharedState` (voir `02_architecture_multi_agents.md`, §4.1, note sur la portée du champ `active_agent`), qui restent un détail d'implémentation jamais exposé au frontend.
+Toutes les données affichées (nom, numéro de compte, solde, transactions) sont fictives, générées pour la démonstration, et distinctes des valeurs visibles sur les images de référence.
 
 ---
 
-## 5\. Composant Chat Overlay (Widget Floating Chat)
+## 4\. Affichage responsive (règles exactes)
 
-### 5.1 Floating Action Button (`ChatFab`)
+- **largeur ≥ 900 px** : téléphone interactif à gauche \+ vue desktop agrandie à droite, affichés simultanément.  
+- **largeur entre 640 px et 899 px** : vue desktop uniquement ; le téléphone décoratif est masqué.  
+- **largeur \< 640 px** : application mobile uniquement, en plein écran, sans cadre de téléphone.
 
-\<button
+Règle de composition : conformément à l'image 3, l'ensemble « téléphone \+ panneau desktop » forme une composition centrée et compacte, avec une largeur maximale raisonnable pour le bloc entier, plutôt que d'étirer le panneau desktop jusqu'aux bords de la fenêtre. Aucun défilement horizontal ne doit apparaître, quelle que soit la largeur testée.
 
-  onClick={toggleOpen}
+Le cadre du téléphone reste visible en permanence tant que la règle ≥ 900 px s'applique, **y compris lorsque la fenêtre de chat est ouverte** (voir §9, positionnement de la fenêtre de chat).
 
-  aria-label="Ouvrir l'assistant CIH"
-
-  className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-cih-orange text-white
-
-             shadow-xl flex items-center justify-center hover:bg-cih-orange-dark
-
-             transition duration-200 z-50"
-
-\>
-
-  \<Bot className="w-6 h-6" /\>
-
-  {hasUnread && (
-
-    \<span className="absolute \-top-1 \-right-1 w-3.5 h-3.5 bg-cih-blue rounded-full border-2 border-white" /\>
-
-  )}
-
-\</button\>
-
-### 5.2 Fenêtre modale dépliable (`ChatWindow`)
-
-\<div className="fixed bottom-24 right-6 w-\[360px\] h-\[520px\] bg-white rounded-2xl
-
-                shadow-xl flex flex-col overflow-hidden z-50"\>
-
-  {/\* En-tête \*/}
-
-  \<div className="flex items-center justify-between px-4 py-3 border-b border-gray-100"\>
-
-    \<div className="flex items-center gap-2.5"\>
-
-      \<div className="w-9 h-9 rounded-full bg-cih-blue-light flex items-center justify-center"\>
-
-        \<Bot className="w-5 h-5 text-cih-blue" /\>
-
-      \</div\>
-
-      \<div\>
-
-        \<p className="text-sm font-semibold text-gray-900"\>
-
-          {activeAgent \=== "secure\_operation" ? "Agent Transactionnel CIH" : "Agent FAQ CIH"}
-
-        \</p\>
-
-        \<p className="text-\[11px\] text-green-600 flex items-center gap-1"\>
-
-          \<span className="w-1.5 h-1.5 rounded-full bg-green-500" /\> En ligne
-
-        \</p\>
-
-      \</div\>
-
-    \</div\>
-
-    \<button onClick={onMinimize} aria-label="Réduire la conversation"\>
-
-      \<ChevronDown className="w-5 h-5 text-gray-400" /\>
-
-    \</button\>
-
-  \</div\>
-
-  {/\* Zone de messages \*/}
-
-  \<div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-cih-surface"\>
-
-    {messages.map((m) \=\> \<ChatMessage key={m.id} message={m} /\>)}
-
-    {isTyping && \<TypingIndicator /\>}
-
-  \</div\>
-
-  {/\* Zone de saisie \*/}
-
-  \<div className="border-t border-gray-100 px-3 py-2.5 flex items-center gap-2"\>
-
-    \<input
-
-      value={draft}
-
-      onChange={(e) \=\> setDraft(e.target.value)}
-
-      placeholder="Écrivez votre message…"
-
-      className="flex-1 bg-gray-100 rounded-full px-4 py-2 text-sm
-
-                 focus:outline-none focus:ring-2 focus:ring-cih-orange"
-
-    /\>
-
-    \<button
-
-      onClick={onSend}
-
-      aria-label="Envoyer"
-
-      className="w-9 h-9 rounded-full bg-cih-orange text-white flex items-center
-
-                 justify-center hover:bg-cih-orange-dark transition"
-
-    \>
-
-      \<Send className="w-4 h-4" /\>
-
-    \</button\>
-
-  \</div\>
-
-\</div\>
-
-### 5.3 Bulles de message (`ChatMessage`)
-
-function ChatMessage({ message }) {
-
-  const isUser \= message.role \=== "user";
-
-  return (
-
-    \<div className={\`flex items-end gap-2 max-w-\[85%\] ${isUser ? "ml-auto flex-row-reverse" : ""}\`}\>
-
-      {\!isUser && (
-
-        \<div className="w-6 h-6 rounded-full bg-cih-blue-light flex items-center justify-center shrink-0"\>
-
-          \<Bot className="w-3.5 h-3.5 text-cih-blue" /\>
-
-        \</div\>
-
-      )}
-
-      \<div className={
-
-        isUser
-
-          ? "bg-cih-orange text-white rounded-2xl rounded-br-sm px-4 py-2 text-sm"
-
-          : "bg-white border border-gray-100 text-gray-800 rounded-2xl rounded-bl-sm px-4 py-2 text-sm shadow-sm"
-
-      }\>
-
-        {message.type \=== "text" && message.content}
-
-        {message.type \=== "transfer\_confirmation" && \<TransferConfirmationCard data={message.data} /\>}
-
-        {message.type \=== "otp\_request" && \<OtpModal data={message.data} /\>}
-
-      \</div\>
-
-    \</div\>
-
-  );
-
-}
-
-### 5.4 Indicateur de saisie (`TypingIndicator`)
-
-\<div className="flex items-center gap-1 bg-white border border-gray-100 rounded-2xl
-
-                px-4 py-3 w-fit shadow-sm"\>
-
-  \<span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce \[animation-delay:-0.3s\]" /\>
-
-  \<span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce \[animation-delay:-0.15s\]" /\>
-
-  \<span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" /\>
-
-\</div\>
-
-### 5.5 Composants riches intégrés au chat
-
-**`TransferConfirmationCard`** — carte de confirmation de virement, rendue à l'intérieur d'une bulle assistant :
-
-\<div className="bg-cih-blue-light rounded-xl p-3 text-sm space-y-1.5 min-w-\[220px\]"\>
-
-  \<div className="flex justify-between"\>\<span className="text-gray-500"\>Bénéficiaire\</span\>\<span className="font-medium"\>{data.beneficiary}\</span\>\</div\>
-
-  \<div className="flex justify-between"\>\<span className="text-gray-500"\>Montant\</span\>\<span className="font-bold text-cih-blue"\>{data.amount} MAD\</span\>\</div\>
-
-  \<div className="flex gap-2 pt-2"\>
-
-    \<button onClick={onConfirm} className="flex-1 bg-cih-orange text-white rounded-lg py-1.5 font-medium"\>Confirmer\</button\>
-
-    \<button onClick={onCancel} className="flex-1 bg-white border border-gray-200 rounded-lg py-1.5 text-gray-600"\>Annuler\</button\>
-
-  \</div\>
-
-\</div\>
-
-**`OtpModal`** (variante intégrée au fil de discussion, et non en overlay séparé lorsqu'invoquée depuis le chat) — 6 cases de saisie, chronomètre de renvoi, bouton de validation, reprenant le même schéma que la carte de confirmation (fond `cih-blue-light`, bouton principal `bg-cih-orange`).
+> **Implémentation technique** : ce seuil est appliqué en **CSS pur** (regles `.showcase-layout` / `.showcase-phone` / `.showcase-desktop`, voir `frontend/src/index.css`), jamais via une classe Tailwind `xl:` (1280 px par défaut) — un seuil CSS explicite reste fiable même lorsque la mise à l'échelle du système d'exploitation réduit la largeur CSS effective rapportée par le navigateur.
 
 ---
 
-## 6\. Architecture des composants React & Props
+## 5\. Synchronisation totale de l'état
 
-### 6.1 Arborescence suggérée
+Une **source d'état unique**, partagée entre le panneau mobile et le panneau desktop, pilote l'intégralité de l'application. Aucune divergence n'est tolérée entre les deux panneaux, à aucun instant, sur aucun des éléments suivants :
 
-src/components/
+- authentification ;  
+- utilisateur ;  
+- écran actif ;  
+- navigation ;  
+- solde ;  
+- visibilité du solde ;  
+- données ;  
+- conversation ;  
+- chat ouvert ou fermé ;  
+- agent actif ;  
+- virement ;  
+- confirmation ;  
+- OTP ;  
+- tentatives ;  
+- résultat ;  
+- déconnexion.
 
-├── Navbar.jsx
-
-├── LoginForm.jsx
-
-├── PublicServicesGrid.jsx
-
-│   └── ServiceCard.jsx
-
-├── Dashboard.jsx
-
-│   ├── AccountCard.jsx
-
-│   └── ShortcutGrid.jsx
-
-│       └── ShortcutCard.jsx
-
-└── chat/
-
-    ├── ChatWidget.jsx          \# composant racine, monté une seule fois dans App.jsx
-
-    ├── ChatFab.jsx
-
-    ├── ChatWindow.jsx
-
-    ├── ChatMessage.jsx
-
-    ├── TypingIndicator.jsx
-
-    ├── TransferConfirmationCard.jsx
-
-    └── OtpModal.jsx
-
-### 6.2 Table des props par composant
-
-**`ChatWidget`**
-
-| Prop | Type | Requis | Description |
-| :---- | :---- | :---- | :---- |
-| `mode` | `"public" | "authenticated"` | oui | Détermine si l'agent est figé sur `agent1` ou si la bascule vers `agent2` est autorisée. |
-| `jwtToken` | `string | null` | non | Transmis dans l'en-tête `Authorization` de chaque appel `/chat` en mode authentifié. |
-| `onRequireAuth` | `() => void` | non | Remonté par un message `requires_auth: true` ; déclenche la surbrillance du `LoginForm`. |
-
-**`ChatMessage`**
-
-| Prop | Type | Requis | Description |
-| :---- | :---- | :---- | :---- |
-| `message` | `{ id, role: "user" | "assistant", type: "text" | "transfer_confirmation" | "otp_request", content?, data? }` | oui | Modèle unique couvrant les messages texte et les composants riches. |
-
-**`TransferConfirmationCard`**
-
-| Prop | Type | Requis | Description |
-| :---- | :---- | :---- | :---- |
-| `data` | `{ beneficiary: string, amount: number, account: string }` | oui | Détails de l'opération à confirmer. |
-| `onConfirm` | `() => void` | oui | Envoie la confirmation à l'Agent 2 via le canal de chat. |
-| `onCancel` | `() => void` | oui | Annule l'opération côté client et notifie le Backend. |
-
-**`OtpModal`**
-
-| Prop | Type | Requis | Description |
-| :---- | :---- | :---- | :---- |
-| `data` | `{ expiresIn: number, phoneMasked: string }` | oui | Durée de validité du code et numéro masqué destinataire. |
-| `onSubmit` | `(code: string) => void` | oui | Transmet le code saisi à l'Agent 2\. |
-| `onResend` | `() => void` | oui | Demande un renvoi de code, désactivé tant que `expiresIn` n'est pas écoulé. |
-
-**`AccountCard`**
-
-| Prop | Type | Requis | Description |
-| :---- | :---- | :---- | :---- |
-| `account` | `{ type: string, number: string, balance: number }` | oui | Données du compte affiché ; `balance` n'est jamais affiché en clair par défaut (voir §4.3). |
-
-**`LoginForm`**
-
-| Prop | Type | Requis | Description |
-| :---- | :---- | :---- | :---- |
-| `highlight` | `boolean` | non | Applique la classe `ring-2 ring-cih-orange animate-pulse` lorsque l'Agent 1 invite l'utilisateur à se connecter. |
-| `onSubmit` | `(identifiant: string, motDePasse: string, remember: boolean) => void` | oui | Déclenche l'appel `/auth/login`. |
-
-> **Règle de cohérence** : tout nouveau composant ajouté à `src/components/chat/` doit être documenté dans ce tableau avant d'être utilisé dans `ChatMessage`, afin que la liste des `type` de message reste exhaustive et centralisée.  
+Une action effectuée sur le PC doit apparaître **immédiatement** dans le téléphone. Une action effectuée dans le téléphone doit apparaître **immédiatement** sur le PC. Il n'existe aucun réglage, aucune donnée et aucun état d'interface qui puisse être différent d'un panneau à l'autre.
 
 ---
 
-## 7\. Contrat d'authentification (`POST /api/auth/login`)
+## 6\. Palette avant authentification
 
-Le `LoginForm` (§3.3, prop `onSubmit`) déclenche cet appel. Toutes les données ci-dessous sont **fictives**, réservées à la démonstration académique.
+| Rôle | Nom | Teinte / valeur | Usage |
+| :---- | :---- | :---- | :---- |
+| Dégradé de fond, point 1 | `auth-gradient-orange` | orange chaud | Coin supérieur du dégradé |
+| Dégradé de fond, point 2 | `auth-gradient-red` | rouge-orangé | Zone haute-milieu du dégradé |
+| Dégradé de fond, point 3 | `auth-gradient-blue` | bleu profond | Zone basse-milieu du dégradé |
+| Dégradé de fond, point 4 | `auth-gradient-violet` | violet sombre | Coin inférieur du dégradé |
+| Panneau d'authentification | `auth-panel` | noir/gris très sombre, semi-transparent | Panneau contenant le formulaire |
+| Accent d'action | `cih-orange` | `#F26522` | Bouton « Connexion », liens actifs |
 
-**Requête :**
+---
 
-{
+## 7\. Palette après authentification
 
-  "customer\_number": "DEMO001",
+| Rôle | Nom | Teinte / valeur | Usage |
+| :---- | :---- | :---- | :---- |
+| Fond principal | `surface-bg` | blanc | Fond de tout l'écran |
+| Séparateur | `cih-orange` (fin) | `#F26522` | Ligne sous l'en-tête |
+| Salutation | `cih-orange` | `#F26522` | Texte « Bonjour {prénom} \! » |
+| Texte principal | `text-primary` | gris foncé | Libellés, titres |
+| Information secondaire | `cih-blue` | `#005CA9` | Numéro de compte masqué, liens secondaires |
+| Icônes d'action | `cih-orange` | `#F26522` | Icônes de la grille de services |
+| Séparateurs secondaires | `cih-orange-light` | orange clair | Séparateurs entre blocs |
+| Cartes | `card-surface` | blanc, bordure grise très claire | Carte de compte, transactions |
 
-  "password": "valeur de démonstration"
+Règle impérative : après authentification, aucun grand fond sombre et aucun dégradé de grande surface ne réapparaissent. L'écran reste clair, sobre, de style bancaire, dans les deux panneaux.
 
-}
+---
 
-**Réponse réussie :**
+## 8\. Stack technique et design tokens
 
-{
+| Élément | Valeur |
+| :---- | :---- |
+| Bibliothèque UI | React 18 |
+| Outil de build | Vite |
+| Langage | JavaScript (JSX) |
+| Framework CSS | TailwindCSS 3 |
+| Icônes | `lucide-react` |
+| Accent principal | `cih-orange` — `#F26522` |
+| Accent secondaire | `cih-blue` — `#005CA9` |
+| Rayon des cartes et blocs | `rounded-2xl` (jamais d'angle vif sur un conteneur de premier niveau) |
+| Élévation par défaut | `shadow-md` pour les cartes |
+| Élévation renforcée | `shadow-xl` réservé au chat déplié et aux modales |
+| Rythme d'espacement | multiples de 4 en Tailwind (`gap-3`, `gap-4`, `p-4`, `p-6`…), pas de valeurs arbitraires |
 
-  "access\_token": "...",
+---
 
-  "token\_type": "bearer",
+## 9\. Règles communes de style
 
-  "expires\_in": 1800,
+- **Rayons** : cartes et blocs largement arrondis (`rounded-2xl`), jamais d'angles vifs sur un conteneur de premier niveau.  
+- **Ombres** : `shadow-md` par défaut sur les cartes ; `shadow-xl` réservé à la fenêtre de chat dépliée et aux modales.  
+- **Espacement** : rythme régulier, identique dans l'esprit entre mobile et desktop ; le panneau desktop respire davantage grâce à l'espace disponible, sans jamais paraître compressé ni disproportionné.  
+- **Icônes** : exclusivement `lucide-react`, un seul jeu cohérent partout, taille réduite dans les listes, intermédiaire dans les en-têtes, plus grande pour le bouton flottant de l'assistant.  
+- **Transitions** : toute carte cliquable, bouton ou bascule s'anime avec une transition courte et douce.  
+- **Positionnement du chat** : la fenêtre de chat est positionnée de manière à ne jamais recouvrir entièrement le cadre du téléphone (voir §4).
 
-  "user": {
+---
 
-    "customer\_id": "CUST-DEMO-001",
+## 10\. Écran de connexion — version mobile (dans le téléphone)
 
-    "display\_name": "Client Démonstration"
+Contenu, de haut en bas, fidèle à l'image 1 :
 
-  }
+1. **En-tête compact** : icône menu à gauche, nom du projet au centre (`CIH AI Banking — Démonstration`, texte seul, sans logo), icône de sécurité à droite.  
+2. **Titre** : « Bienvenue ».  
+3. **Panneau sombre semi-transparent** :  
+   - identifiant (valeur fictive pré-remplie, ex. « Client Démo ») ;  
+   - mot de passe masqué, avec lien « Oublié ? » aligné à droite ;  
+   - bascule « Se souvenir de moi » ;  
+   - bouton pleine largeur « Connexion » (`cih-orange`).  
+4. **Section « Nos services »**, grille 2 × 2 : Portail immobilier, Assurances, Agences, Partenaires.  
+5. **Bouton Assistant IA** (visuel), fenêtre de chat partagée fermée par défaut.
 
-}
+---
 
-- Le frontend utilise **exclusivement** `user.display_name` pour la salutation du header (§4.2) — jamais de nom codé en dur.  
-- `access_token` est le jeton de session **long terme** (frontend ↔ FastAPI), distinct du jeton de délégation A2A à courte durée de vie décrit dans `02_architecture_multi_agents.md` (§4.2bis), que le frontend ne voit jamais.  
-- `expires_in` est exprimé en secondes (`1800` = 30 minutes, cohérent avec `JWT_EXPIRATION_MINUTES=30` dans `03_stack_technique.md`).
+## 11\. Écran de connexion — adaptation desktop agrandie (même écran)
+
+Le panneau desktop affiche **exactement le même écran de connexion**, agrandi et respacé pour un affichage large — ce n'est pas un écran différent ni une page d'accueil marketing :
+
+1. **En-tête compact**, mêmes éléments que la version mobile (menu, nom du projet, icône de sécurité), simplement étirés sur la largeur du panneau.  
+2. **Titre « Bienvenue »**, repris à l'identique, en taille agrandie.  
+3. **Panneau sombre semi-transparent**, mêmes champs dans le même ordre (identifiant, mot de passe, « Oublié ? », « Se souvenir de moi », bouton « Connexion »), présenté dans un module de largeur confortable et centré dans le panneau desktop, sur le même fond en dégradé que la version mobile.  
+4. **Section « Nos services »**, mêmes quatre entrées (Portail immobilier, Assurances, Agences, Partenaires), réorganisées sur une seule rangée de quatre plutôt qu'en grille 2 × 2, pour profiter de la largeur disponible.  
+5. **Bouton Assistant IA** (visuel), contrôlant la même fenêtre de chat partagée que le bouton mobile (voir §13).  
+6. **Mention académique** visible en pied de panneau.
+
+---
+
+## 12\. Écran dashboard — version mobile (dans le téléphone)
+
+Contenu, de haut en bas, fidèle à l'image 2 :
+
+1. **En-tête** : icône menu, icône messages (badge), icône notifications (badge), icône déconnexion/paramètres.  
+2. **Salutation** : « Bonjour {prénom} \! », en orange, sous une ligne fine orange.  
+3. **Carte de compte**, centrée : type de compte, numéro fictif masqué, libellé « Solde », montant masqué par défaut (`**** MAD`) avec bouton afficher/masquer.  
+4. **Grille de services 2 × 3** : Mes cartes, Effectuer un virement, Effectuer une recharge, Payer mes factures, Financer mon projet, Payer vignette — icônes orange, séparateurs orange clair.  
+5. **Transactions récentes** : liste courte, icône de catégorie, libellé, date, montant.  
+6. **Navigation inférieure** : Accueil, Virements, Cartes, Assistance.  
+7. **Bouton Assistant IA** (visuel), fenêtre de chat partagée fermée par défaut.
+
+Toutes les données sont fictives et proviennent de l'état partagé unique (§5) ; aucune valeur n'est codée en dur.
+
+---
+
+## 13\. Écran dashboard — adaptation desktop agrandie (même écran, visualisations complémentaires)
+
+Le panneau desktop affiche **le même dashboard**, avec les mêmes données de session, présentées plus clairement grâce à l'espace disponible. Il peut inclure des visualisations complémentaires des mêmes données fictives :
+
+1. **Sidebar** : navigation verticale (adaptation de la navigation inférieure mobile : Accueil, Virements, Cartes, Assistance), nom du projet en en-tête de sidebar.  
+2. **En-tête desktop** : salutation « Bonjour {prénom} \! » (reprise à l'identique, taille agrandie), messages, notifications.  
+3. **Compte et solde** : même carte de compte que la version mobile (même numéro masqué, même solde, même bouton afficher/masquer partagé).  
+4. **Six raccourcis** : mêmes six actions que la grille mobile (Mes cartes, Effectuer un virement, Effectuer une recharge, Payer mes factures, Financer mon projet, Payer vignette), présentées en rangée ou en grille adaptée à la largeur.  
+5. **Transactions récentes** : même liste que la version mobile, avec plus d'espace de lecture.  
+6. **Graphique de répartition fictive des dépenses** : visualisation complémentaire, catégories et montants fictifs cohérents avec les transactions affichées.  
+7. **Carte bancaire fictive et masquée** : visuel générique, numéro masqué, nom fictif, date d'expiration fictive, sans aucun logo de réseau de paiement.  
+8. **Encart de sécurité** : invitation à activer une double authentification, cohérente avec les contrôles décrits dans `04_scenarios_et_securite.md`.  
+9. **Bouton Assistant IA** (visuel), contrôlant la même fenêtre de chat partagée que le bouton mobile.  
+10. **Mention académique** visible en pied de panneau.
+
+Ces éléments desktop ne constituent pas une deuxième application : ils présentent, de façon plus lisible, les mêmes données fictives de la session mobile.
+
+---
+
+## 14\. Assistant IA — un seul ChatWidget
+
+Il existe **un seul `ChatWidget`**, monté une seule fois dans `App`. Il n'existe ni deux instances de chat, ni deux fenêtres de chat indépendantes, ni ouverture locale propre à un panneau.
+
+- Deux **boutons visuels** existent : un bouton Assistant IA dans le téléphone, un bouton Assistant IA dans le panneau desktop.  
+- Les deux boutons contrôlent **le même** `ChatWidget`, **la même** fenêtre, **la même** conversation et **le même** état d'ouverture. Cliquer sur l'un ou l'autre ouvre ou ferme la fenêtre de chat unique, visible identiquement dans son état pour les deux panneaux.  
+- Le chat est **fermé par défaut**.  
+- Avant authentification, la conversation est figée sur l'Agent FAQ (Agent 1, voir `02_architecture_multi_agents.md`). Si l'utilisateur pose une question personnelle ou sensible sans être connecté, l'assistant invite à se connecter et les deux écrans de connexion (mobile et desktop) sont mis en évidence simultanément (léger halo orange temporaire), puisqu'il s'agit du même écran actif partagé.  
+- Après authentification, la bascule vers l'Agent Transactionnel (Agent 2\) et le retour à l'Agent FAQ en fin d'opération sont visibles simultanément et à l'identique par les deux boutons d'accès, puisqu'il s'agit du même widget et de la même conversation.
+
+---
+
+## 15\. Virement et OTP — états synchronisés
+
+Le déroulé d'un virement suit une séquence d'états strictement synchronisée entre le téléphone et le panneau desktop ; seule la présentation visuelle s'adapte au format (largeur de bulle, densité), jamais le contenu ni l'état :
+
+1. **Demande de virement** : l'utilisateur exprime son intention (bénéficiaire, montant) dans la conversation.  
+2. **`TransferConfirmationCard`** : récapitulatif de l'opération (bénéficiaire, montant, compte source) affiché dans le fil de discussion.  
+3. **Confirmation ou annulation** : action de l'utilisateur sur la carte de récapitulatif.  
+4. **Passage en « Mode opération sécurisée »** : l'en-tête du chat signale le passage à l'Agent Transactionnel (Agent 2).  
+5. **`OtpModal`** : saisie du code de confirmation, intégrée au fil de discussion.  
+6. **Code de démonstration `123456`** : seule valeur acceptée dans l'environnement de démonstration.  
+7. **Code correct → succès** : passage à l'étape de résultat positif.  
+8. **Autre code → erreur** : message d'erreur, décrément du nombre de tentatives restantes.  
+9. **Maximum trois tentatives** : au-delà, l'opération est annulée et l'échec est notifié.  
+10. **`TransferResult`** : bloc final affichant le résultat (succès ou échec) de l'opération.
+
+Chaque étape apparaît **simultanément** dans le téléphone et dans la vue desktop, avec le même état (même carte affichée, même nombre de tentatives restantes, même résultat), quelle que soit l'interface depuis laquelle l'utilisateur agit.
+
+---
+
+## 16\. Règles de contenu fictif obligatoires
+
+| Élément | Règle |
+| :---- | :---- |
+| Nom d'utilisateur | Fictif, injecté dynamiquement, jamais identique aux captures de référence |
+| Numéro de compte | Fictif, masqué par défaut, format plausible mais inventé |
+| Solde et montants | Fictifs, distincts des exemples des captures de référence |
+| Transactions | Fictives (enseignes, dates, montants inventés) |
+| Carte bancaire (desktop) | Visuel générique, masqué, sans logo de réseau de paiement |
+| Logos | Aucun logo officiel CIH, aucun logo VISA ou autre réseau ; uniquement le nom du projet en texte |
+| Mention académique | Toujours visible, sur les deux panneaux, avant et après authentification |
+
+---
+
+## 17\. Composants — rôle, props et emplacement
+
+| Composant | Rôle | Props principales | Emplacement |
+| :---- | :---- | :---- | :---- |
+| `App` | Racine de l'application ; détient/fournit l'état partagé via `BankingAppProvider` ; monte `ResponsiveShowcase` et l'unique `ChatWidget` | — | `src/App.jsx` |
+| `BankingAppProvider` | Fournisseur de l'état partagé unique (auth, utilisateur, écran actif, données de compte, conversation, agent actif, opération de virement, ouverture du chat) | `children` | `src/context/BankingAppProvider.jsx` |
+| `ResponsiveShowcase` | Organise l'affichage selon les règles de largeur (§4) ; décide du rendu de `PhonePreview` et/ou `DesktopView` | — (lit l'état partagé) | `src/components/ResponsiveShowcase.jsx` |
+| `PhonePreview` | Cadre de téléphone décoratif et interactif, utilisé uniquement à partir de 900 px (aux côtés de `DesktopView`) ; reçoit l'état partagé et rend `MobileLoginView` ou `MobileDashboard` selon l'écran actif | état partagé (lecture/écriture) | `src/components/PhonePreview.jsx` |
+| `MobileAppView` | Affiche directement `MobileLoginView` ou `MobileDashboard` sur un véritable écran mobile, sans cadre décoratif, utilisé sous 640 px | utilise le même état global partagé | `src/components/mobile/MobileAppView.jsx` |
+| `MobileLoginView` | Écran de connexion mobile (§10) | `onLogin` | `src/components/mobile/MobileLoginView.jsx` |
+| `MobileDashboard` | Écran dashboard mobile (§12) | `account`, `transactions`, `balanceVisible`, `onToggleBalance` | `src/components/mobile/MobileDashboard.jsx` |
+| `DesktopLoginView` | Écran de connexion desktop agrandi (§11) | `onLogin` | `src/components/desktop/DesktopLoginView.jsx` |
+| `DesktopDashboard` | Écran dashboard desktop agrandi (§13) | `account`, `transactions`, `balanceVisible`, `onToggleBalance` | `src/components/desktop/DesktopDashboard.jsx` |
+| `DesktopView` | Équivalent desktop de `PhonePreview` ; reçoit le même état partagé et rend `DesktopLoginView` ou `DesktopDashboard` selon l'écran actif | état partagé (lecture/écriture) | `src/components/DesktopView.jsx` |
+| `Sidebar` | Navigation verticale du dashboard desktop (adaptation de la navigation inférieure mobile) | `activeSection`, `onNavigate` | `src/components/desktop/Sidebar.jsx` |
+| `DesktopHeader` | En-tête du panneau desktop (salutation, messages, notifications) | `userName` | `src/components/desktop/DesktopHeader.jsx` |
+| `AccountCard` | Carte de compte et de solde, rendue à l'identique dans les deux panneaux à partir du même état | `account`, `balanceVisible`, `onToggleBalance` | `src/components/shared/AccountCard.jsx` |
+| `BankCard` | Visuel de carte bancaire fictive et masquée (desktop) | `cardData` | `src/components/desktop/BankCard.jsx` |
+| `RecentTransactions` | Liste des transactions récentes (mobile et desktop) | `transactions` | `src/components/shared/RecentTransactions.jsx` |
+| `QuickActions` | Six raccourcis bancaires (mobile et desktop) | `actions` | `src/components/shared/QuickActions.jsx` |
+| `SpendingChart` | Graphique fictif de répartition des dépenses (desktop) | `data` | `src/components/desktop/SpendingChart.jsx` |
+| `SecurityBanner` | Encart d'incitation à la double authentification (desktop) | `onActivate` | `src/components/desktop/SecurityBanner.jsx` |
+| `BottomNav` | Navigation inférieure mobile | `activeSection`, `onNavigate` | `src/components/mobile/BottomNav.jsx` |
+| `ChatWidget` | Composant unique de l'assistant IA, monté une seule fois dans `App` ; détient la conversation, l'agent actif et l'état d'ouverture partagés | `jwtToken`, `mode` | `src/components/chat/ChatWidget.jsx` |
+| `ChatFab` | Bouton visuel d'ouverture/fermeture, rendu une fois dans `PhonePreview` et une fois dans `DesktopView`, contrôlant le même `ChatWidget` | `onToggle`, `variant: "mobile" ou "desktop"` | `src/components/chat/ChatFab.jsx` |
+| `ChatWindow` | Fenêtre de conversation affichant l'historique partagé | `messages`, `isTyping`, `onSend` | `src/components/chat/ChatWindow.jsx` |
+| `ChatMessage` | Bulle de message individuelle (texte ou composant riche) | `message` | `src/components/chat/ChatMessage.jsx` |
+| `QuickSuggestions` | Suggestions de questions rapides dans le chat | `suggestions`, `onSelect` | `src/components/chat/QuickSuggestions.jsx` |
+| `TransferConfirmationCard` | Récapitulatif de virement à confirmer (§15) | `data`, `onConfirm`, `onCancel` | `src/components/chat/TransferConfirmationCard.jsx` |
+| `OtpModal` | Saisie du code de confirmation (§15) | `expiresIn`, `attemptsLeft`, `onSubmit`, `onResend` | `src/components/chat/OtpModal.jsx` |
+| `TransferResult` | Bloc de résultat final de l'opération (§15) | `status`, `details` | `src/components/chat/TransferResult.jsx` |
+
+Règles structurelles obligatoires :
+
+- `App` détient ou fournit l'état partagé (via `BankingAppProvider`).  
+- `ResponsiveShowcase` organise les deux vues selon les règles de largeur (§4).  
+- `PhonePreview` reçoit l'état partagé.  
+- `DesktopView` reçoit le même état partagé.  
+- `ChatWidget` est monté une seule fois dans `App`.
+
+---
+
+## 18\. Organisation générale (arborescence)
+
+Interface racine
+
+├── App
+
+│   └── BankingAppProvider (état partagé unique)
+
+│       ├── ResponsiveShowcase
+
+│       │   ├── ≥ 900 px
+
+│       │   │   ├── PhonePreview
+
+│       │   │   │   ├── MobileLoginView          (§10)
+
+│       │   │   │   ├── MobileDashboard          (§12)
+
+│       │   │   │   ├── BottomNav
+
+│       │   │   │   └── ChatFab (variant="mobile")
+
+│       │   │   └── DesktopView
+
+│       │   │       ├── DesktopLoginView         (§11)
+
+│       │   │       ├── DesktopDashboard         (§13)
+
+│       │   │       │   ├── Sidebar
+
+│       │   │       │   ├── DesktopHeader
+
+│       │   │       │   ├── AccountCard
+
+│       │   │       │   ├── QuickActions
+
+│       │   │       │   ├── RecentTransactions
+
+│       │   │       │   ├── SpendingChart
+
+│       │   │       │   ├── BankCard
+
+│       │   │       │   └── SecurityBanner
+
+│       │   │       └── ChatFab (variant="desktop")
+
+│       │   ├── 640–899 px
+
+│       │   │   └── DesktopView (seul rendu, structure identique ci-dessus)
+
+│       │   └── \< 640 px
+
+│       │       └── MobileAppView (sans cadre décoratif)
+
+│       │           ├── MobileLoginView          (§10)
+
+│       │           ├── MobileDashboard          (§12)
+
+│       │           ├── BottomNav
+
+│       │           └── ChatFab (variant="mobile")
+
+│       └── ChatWidget (monté une seule fois, instance unique)
+
+│           ├── ChatWindow
+
+│           │   ├── ChatMessage
+
+│           │   ├── QuickSuggestions
+
+│           │   ├── TransferConfirmationCard
+
+│           │   ├── OtpModal
+
+│           │   └── TransferResult
+
+└── Mention académique persistante (les deux panneaux)
+
+---
+
+## 19\. Checklist de validation
+
+- [ ] À 1920 px avant connexion : téléphone login \+ connexion desktop.  
+- [ ] À 1920 px après connexion : dashboard mobile \+ dashboard desktop.  
+- [ ] À 800 px (entre 640 et 899 px) : vue desktop uniquement.  
+- [ ] À 375 px : application mobile uniquement.  
+- [ ] Le téléphone est interactif et non décoratif.  
+- [ ] Les actions du PC apparaissent dans le téléphone.  
+- [ ] Les actions du téléphone apparaissent dans le PC.  
+- [ ] Le solde affiché ou masqué est synchronisé.  
+- [ ] Un seul ChatWidget est monté dans App.  
+- [ ] Deux boutons visuels ouvrent le même chat.  
+- [ ] Le chat est fermé par défaut.  
+- [ ] Le virement, la confirmation, l'OTP et le résultat sont synchronisés.  
+- [ ] Le téléphone reste visible lorsque le chat est ouvert.  
+- [ ] Aucun logo officiel et aucune donnée réelle.  
+- [ ] Aucun défilement horizontal à 1920 px.
+
+---
+
+## 20\. Règle de cohérence et d'évolution du document
+
+Tout nouvel écran, tout nouveau composant de chat riche ou toute nouvelle donnée affichée doit d'abord être décrit dans ce document — avec son contenu exact et sa règle de synchronisation totale entre le téléphone et le panneau desktop — avant d'être implémenté. Aucun état métier, aucune donnée, aucune conversation et aucune opération ne peuvent différer entre les deux vues. La vue desktop peut toutefois utiliser des composants visuels complémentaires — graphique, carte bancaire fictive et encart de sécurité — pour présenter plus clairement les mêmes données partagées.  

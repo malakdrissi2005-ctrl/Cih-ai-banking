@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>CIH AI Banking — Backend Agent 1 (démonstration technique)</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; }
+  h1 { font-size: 1.25rem; }
+  p.hint { color: #555; }
+  textarea { width: 100%; min-height: 80px; font-size: 1rem; padding: 8px; box-sizing: border-box; font-family: inherit; }
+  button { margin-top: 8px; padding: 8px 16px; font-size: 1rem; cursor: pointer; }
+  pre { background: #f4f4f4; padding: 12px; white-space: pre-wrap; word-break: break-word; border-radius: 8px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 8px; font-size: 0.8rem; margin-bottom: 12px; background: #fde2e2; color: #8a1f1f; }
+  .examples { font-size: 0.85rem; color: #555; }
+  .examples button { display: block; width: 100%; text-align: left; background: #f4f4f4; border: none; padding: 6px 10px; margin: 4px 0; border-radius: 6px; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<p class="badge">Page de test technique interne — ne fait pas partie du frontend du projet</p>
+<h1>CIH AI Banking — Backend Agent 1 (pré-authentification)</h1>
+<p class="hint">Cette page sert uniquement à interroger manuellement l'endpoint <code>POST /api/chat</code> depuis un navigateur. Elle est servie par le Backend FastAPI et n'est reliée à aucun composant du dossier <code>frontend/</code>.</p>
+
+<textarea id="message" placeholder="Écrivez une question…"></textarea>
+<br />
+<button id="send">Envoyer</button>
+
+<div class="examples">
+  <p>Exemples :</p>
+  <button type="button" data-example="Quels sont les papiers nécessaires pour ouvrir un compte CIH ?">Question publique (FAQ)</button>
+  <button type="button" data-example="Quel est mon solde actuel ?">Question personnelle (solde)</button>
+  <button type="button" data-example="Je veux virer 500 DH à Youssef">Demande de virement</button>
+</div>
+
+<pre id="output">(la réponse apparaîtra ici)</pre>
+
+<script>
+  const messageBox = document.getElementById("message");
+  const output = document.getElementById("output");
+
+  document.querySelectorAll(".examples button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      messageBox.value = btn.dataset.example;
+    });
+  });
+
+  document.getElementById("send").addEventListener("click", async () => {
+    const message = messageBox.value;
+    output.textContent = "…";
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      const data = await res.json();
+      output.textContent = JSON.stringify(data, null, 2);
+    } catch (err) {
+      output.textContent = "Erreur : " + err;
+    }
+  });
+</script>
+</body>
+</html>

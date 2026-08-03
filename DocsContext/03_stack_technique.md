@@ -24,8 +24,9 @@ Ce document répond à la question *« avec quoi, précisément, construit-on ce
 | Frontend | React.js | 18.x | Interface conversationnelle et écrans de confirmation/OTP |
 | Frontend — style | TailwindCSS | 3.x | Charte graphique CIH Bank (couleurs, densité, composants) |
 | Frontend — icônes | lucide-react | 0.4xx | Bibliothèque d'icônes cohérente et légère |
-| Backend API | FastAPI | 0.115+ | Endpoints, gestion des sessions et des tokens |
+| Backend API | FastAPI | 0.115+ | Endpoints, gestion des sessions et des tokens, exposition de l'endpoint sécurisé de validation OTP |
 | Backend — serveur ASGI | Uvicorn | 0.30+ | Serveur d'exécution de FastAPI |
+| Service OTP du prototype | `MockOtpService` interne | — | Vérification déterministe du code OTP via FastAPI ; seul le résultat booléen est transmis à l'Agent 2 |
 | Langage backend | Python | 3.11+ | Requis par les typages modernes utilisés dans le `SharedState` |
 | Orchestration IA | LangChain | 0.3+ | Primitives d'appel LLM, outils, gestion des prompts |
 | Orchestration multi-agents | LangGraph | 0.2+ | Graphe d'états, cycles, interruptions humaines |
@@ -59,7 +60,7 @@ LangChain seul excelle pour des chaînes d'appels linéaires (prompt → LLM →
 
 - **Gestion d'états cycliques et complexes** : la séquence des 7 contrôles de l'Agent 2 (`02_architecture_multi_agents.md`, §3.2) n'est pas un pipeline linéaire — elle comporte des branches d'échec, des retours, et un état (`SharedState`) qui doit être lu et enrichi par chaque nœud.  
 - **Support natif du multi-agent** : LangGraph permet de modéliser chaque agent comme un graphe indépendant, tout en formalisant proprement la frontière de délégation entre eux (§02, §4).  
-- **Interruptions natives pour la validation humaine** : le mécanisme d'interruption de LangGraph (`interrupt` / reprise de graphe) correspond exactement au besoin des étapes `input-required` du cycle A2A (confirmation utilisateur, saisie OTP) — le graphe se met en pause, attend une réponse humaine, puis reprend exactement là où il s'était arrêté, sans reconstruire son contexte.
+- **Interruptions natives pour la validation humaine** : le mécanisme d'interruption de LangGraph (`interrupt` / reprise de graphe) correspond aux étapes `input-required` du cycle A2A. Pour la confirmation, le graphe attend une action explicite de l'utilisateur. Pour l'OTP, il attend uniquement le résultat structuré de la vérification effectuée par FastAPI et le service OTP déterministe. Le code OTP brut n'est jamais transmis au graphe, au LLM, à l'Agent 1 ou à la tâche A2A. Après réception du résultat `otp_verified`, le graphe reprend exactement là où il s'était arrêté, sans reconstruire son contexte.
 
 ### 3.3 Pourquoi ChromaDB ?
 
@@ -112,11 +113,17 @@ cih-ai-banking/
 
 │   │   │   ├── auth.py
 
-│   │   │   └── chat.py
+│   │   │   ├── chat.py
 
-│   │   └── security/
+│   │   │   └── transfers.py          \# endpoint sécurisé /api/transfers/{task\_id}/verify-otp
 
-│   │       └── jwt\_handler.py
+│   │   ├── security/
+
+│   │   │   └── jwt\_handler.py
+
+│   │   └── services/
+
+│   │       └── otp\_service.py        \# MockOtpService déterministe pour le MVP
 
 │   ├── requirements.txt
 
@@ -352,13 +359,15 @@ MONTHLY\_TRANSFER\_LIMIT=50000.00
 
 TRANSFER\_CURRENCY=MAD
 
-\# \--- OTP simulé (MockOtpService — prototype académique uniquement) \---
+\# \--- Service OTP déterministe du MVP (appelé exclusivement par FastAPI) \---
 
 DEMO\_OTP\_CODE=123456
 
 OTP\_EXPIRATION\_SECONDS=180
 
 OTP\_MAX\_ATTEMPTS=3
+
+> **Chemin sécurisé de l'OTP** : `DEMO_OTP_CODE` est utilisé uniquement par le `MockOtpService` appelé depuis l'endpoint FastAPI dédié. Le code saisi par l'utilisateur n'est jamais transmis à l'Agent 1, au LLM, au protocole A2A, à l'Agent 2 ou au checkpointer LangGraph. Seul le résultat booléen `otp_verified` peut être communiqué à l'Agent 2.
 
 > **Règle de sécurité non négociable** : `.env` ne doit jamais être committé. Seul `.env.example` (sans valeurs réelles) est versionné. Toute valeur marquée `change-me-in-production` doit être régénérée avant tout déploiement au-delà du poste de développement.
 
@@ -488,11 +497,11 @@ npm run dev
 
 **11\. Vérification de bout en bout**
 
-Ouvrir l'application frontend, s'authentifier via `POST /api/auth/login` (voir `05_interface_frontend.md`, §7 pour le contrat), puis tester successivement :
+Ouvrir l'application frontend, s'authentifier via `POST /api/auth/login` (voir `05_interface_frontend.md` pour le contrat), puis tester successivement :
 
 - une question de FAQ publique (sans connexion) ;  
 - une demande de solde après connexion ;  
-- une demande de virement complète, jusqu'à la validation OTP (code de démonstration `DEMO_OTP_CODE`).
+- une demande de virement complète, jusqu'à la validation sécurisée de l'OTP via l'endpoint FastAPI dédié et le `MockOtpService` (code de démonstration `DEMO_OTP_CODE`).
 
 Chaque étape doit être visible dans les journaux respectifs du Backend (Agent 1 inclus), de l'Agent 2, du serveur MCP et de n8n — c'est le signe que la chaîne de bout en bout décrite dans `02_architecture_multi_agents.md` (§5) fonctionne dans son intégralité.
 

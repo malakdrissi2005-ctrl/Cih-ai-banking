@@ -41,3 +41,20 @@ Thumbs.db
 .mypy_cache/
 .ruff_cache/
 *.tmp
+
+# --- Couverture de tests ---
+.coverage
+.coverage.*
+htmlcov/
+
+# --- IDE (au-dela de VS Code deja couvert ci-dessus) ---
+.idea/
+
+# --- Materiel secret (filet de securite au-dela de .env) ---
+*.pem
+*.key
+*.crt
+*.p12
+
+# --- Overrides Docker locaux (jamais partages) ---
+docker-compose.override.yml

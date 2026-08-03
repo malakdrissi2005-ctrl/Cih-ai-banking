@@ -20,13 +20,18 @@ Toute implémentation qui dévierait des règles d'aiguillage ou de la séquence
 
 ### 2.1 Mission
 
-L'Agent 1 est le **point d'entrée utilisateur unique** du système. Ses responsabilités, dans l'ordre où elles interviennent dans le graphe :
+L'Agent 1 est le **point d'entrée utilisateur unique** du système. Il assure les fonctions d'accueil, d'information, de consultation en lecture seule et d'orientation.
 
-1. Classifier l'intention du message entrant.  
-2. Répondre aux questions documentaires publiques via RAG.  
-3. Orienter (demande de connexion, ou délégation à l'Agent 2\) lorsque la demande dépasse son périmètre.
+Ses responsabilités, dans l'ordre où elles interviennent dans le graphe, sont les suivantes :
 
-L'Agent 1 ne détient **aucune capacité d'exécution** sur une opération sensible : il ne fait qu'orienter et informer.
+1. Recevoir le message utilisateur ainsi que le contexte de session vérifié par le Backend FastAPI.
+2. Classifier l'intention du message entrant.
+3. Répondre aux questions documentaires publiques via le pipeline RAG.
+4. Pour un utilisateur authentifié, consulter certaines données bancaires personnelles en lecture seule, notamment le solde et l'historique des transactions, au moyen d'outils bancaires strictement limités.
+5. Orienter un utilisateur non authentifié vers la connexion lorsqu'il demande l'accès à une donnée personnelle ou souhaite effectuer une opération sensible.
+6. Détecter les demandes de virement et, uniquement lorsque l'utilisateur est authentifié, déléguer leur traitement à l'Agent 2 via le protocole A2A.
+
+L'Agent 1 ne détient **aucune capacité d'écriture ou d'exécution d'une opération sensible** sur le système bancaire. Il peut uniquement consulter des données autorisées en lecture seule. Il ne peut ni créer, ni modifier, ni supprimer une donnée bancaire, et ne peut jamais exécuter directement un virement.
 
 ### 2.2 Moteur RAG
 
@@ -72,7 +77,9 @@ La séquence est **incompressible** : chaque contrôle doit réussir avant que l
 | 4 | Couverture du solde disponible | `validate_balance` | `failed: insufficient_funds` |
 | 5 | Respect des plafonds journaliers/mensuels (`DAILY_TRANSFER_LIMIT`, `MONTHLY_TRANSFER_LIMIT`) | `validate_limits` | `failed: limit_exceeded` |
 | 6 | Confirmation explicite de l'utilisateur | `request_confirmation` | `failed: user_cancelled` (ou passage en `input-required: confirmation`) |
-| 7 | Saisie et validation du code OTP — **obligatoire, sans exception, quel que soit le montant** | `validate_otp` | `failed: invalid_otp` (après 3 tentatives) ou `failed: otp_expired` (au-delà de 3 minutes) |
+| 7 | Vérification du résultat de validation OTP fourni par le service OTP déterministe — **obligatoire, sans exception, quel que soit le montant** | `validate_otp` | `failed: invalid_otp` (après 3 tentatives) ou `failed: otp_expired` (au-delà de 3 minutes) |
+
+> **Traitement sécurisé de l'OTP** : le nœud `validate_otp` ne reçoit jamais le code OTP brut. Le code saisi par l'utilisateur est envoyé directement par le frontend vers un endpoint FastAPI dédié, puis vérifié par un service OTP déterministe. L'Agent 2 reçoit uniquement le résultat structuré de cette vérification, sous la forme `otp_verified=true` ou `otp_verified=false`, associé au `task_id` concerné. Le code OTP n'est jamais transmis à l'Agent 1, au LLM, au protocole A2A, aux messages LangChain ou au checkpointer LangGraph.
 
 > **Contrôle n°1 — pourquoi une revalidation, et comment ?** L'Agent 1 a déjà transmis un statut d'authentification dans le contexte de délégation. L'Agent 2 ne considère jamais cette information comme acquise : il revalide **localement et cryptographiquement** le jeton de délégation A2A reçu (signature, émetteur, audience, expiration, portée, `task_id`, `jti` — voir §4.2). Pour ce MVP, cette validation locale est **suffisante** : aucun appel réseau supplémentaire vers un service d'authentification externe n'est nécessaire. Un simple champ `is_authenticated=true` transmis en clair n'est **jamais** considéré comme une preuve suffisante. Le jeton complet n'est **jamais journalisé** (voir `04_scenarios_et_securite.md`, §5).
 
@@ -289,7 +296,7 @@ submitted ──▶ working ──▶ input-required:confirmation ──▶ work
 | `submitted` | La tâche vient d'être créée par l'Agent 1. |
 | `working` | L'Agent 2 exécute sa séquence de contrôles (§3.2). |
 | `input-required: confirmation` | Le contrôle n°6 (`request_confirmation`) attend une action explicite de l'utilisateur côté frontend. |
-| `input-required: otp` | Le contrôle n°7 (`validate_otp`) attend la saisie du code OTP ; fenêtre de validité propre de **3 minutes**, indépendante du TTL global de la tâche. |
+| `input-required:otp` | Le contrôle n°7 (`validate_otp`) attend le résultat de la vérification effectuée par le service OTP déterministe. Le frontend collecte le code dans un écran dédié et l'envoie directement à FastAPI, sans passage par l'Agent 1, le LLM ou la tâche A2A. La fenêtre de validité de l'OTP est de **3 minutes**, indépendamment du TTL global de la tâche. |
 | `completed` | Les 7 contrôles ont réussi et le virement a été exécuté avec succès. |
 | `failed` | Un contrôle a échoué (motif explicite, ex. `insufficient_funds`, `invalid_otp`). |
 | `cancelled` | L'utilisateur a explicitement annulé l'opération (ex. bouton "Annuler" de la `TransferConfirmationCard`). |
@@ -299,12 +306,26 @@ submitted ──▶ working ──▶ input-required:confirmation ──▶ work
 
 ### 4.5 Persistance et reprise de tâche (checkpointer SQLite)
 
-Le cycle `input-required` (§4.4) implique que le graphe LangGraph de l'Agent 2 soit **interrompu puis repris** entre plusieurs requêtes HTTP distinctes (ex. requête de confirmation, puis requête contenant le code OTP, chacune passant par React → FastAPI → Agent 1 → A2A → Agent 2). Un backend FastAPI est **sans état** entre deux requêtes : sans mécanisme de persistance explicite, l'état interrompu du graphe serait perdu.
+Le cycle `input-required` (§4.4) implique que le graphe LangGraph de l'Agent 2 soit **interrompu puis repris** entre plusieurs requêtes HTTP distinctes. Ces deux interruptions ne suivent pas le même chemin :
+
+- **Confirmation** : chemin conversationnel habituel, React → FastAPI → Agent 1 → A2A → Agent 2.
+- **OTP** : chemin direct et séparé, React → FastAPI → service OTP déterministe. Après vérification, FastAPI transmet à l'Agent 2 uniquement un résultat structuré, jamais le code lui-même :
+
+{
+
+  "task\_id": "a2a-7f3e2b1c",
+
+  "otp\_verified": true
+
+}
+
+Un backend FastAPI est **sans état** entre deux requêtes : sans mécanisme de persistance explicite, l'état interrompu du graphe serait perdu.
 
 **Décision pour le MVP** : un **checkpointer SQLite** (`langgraph.checkpoint.sqlite`) persiste l'état complet du graphe de l'Agent 2 à chaque interruption.
 
 - **Clé de reprise principale** : `task_id` (identifiant de la tâche A2A). Chaque appel de reprise (`invoke`/`resume` du graphe) est adressé avec ce même `task_id` comme `thread_id` du checkpointer.
-- À réception d'une confirmation ou d'un code OTP, le Backend transmet le `task_id` reçu précédemment par le frontend ; l'Agent 2 charge l'état correspondant depuis SQLite et reprend l'exécution exactement au nœud où elle s'était arrêtée (`request_confirmation` ou `validate_otp`).
+- À réception d'une **confirmation**, le Backend relaie l'information via le chemin conversationnel (Agent 1 → A2A) avec le `task_id` reçu précédemment par le frontend ; l'Agent 2 charge l'état correspondant depuis SQLite et reprend l'exécution au nœud `request_confirmation`.
+- À réception d'un **résultat de vérification OTP**, le Backend transmet directement à l'Agent 2 le couple `{task_id, otp_verified}` reçu du service OTP déterministe ; l'Agent 2 charge l'état correspondant depuis SQLite et reprend l'exécution au nœud `validate_otp` sans jamais recevoir le code brut.
 - **Expiration de tâche** : `A2A_TASK_TTL_MINUTES=10` — une tâche en `input-required:*` sans réponse pendant 10 minutes passe automatiquement à `expired` (vérifié à la lecture du checkpoint, en comparant l'horodatage de dernière mise à jour à l'horloge courante).
 - **Expiration de l'OTP** : indépendante du TTL de la tâche — un code OTP émis reste valide **3 minutes** ; passé ce délai, `input-required:otp` échoue avec `failed: otp_expired` même si la tâche globale n'a pas atteint son TTL de 10 minutes.
 - Le fichier SQLite du checkpointer ne contient que l'état structuré du graphe (montants, statuts de validation, `task_id`) — jamais de secret en clair (le jeton de délégation et le code OTP ne sont jamais persistés tels quels dans un champ lisible sans contrôle d'accès équivalent à celui du reste du système).

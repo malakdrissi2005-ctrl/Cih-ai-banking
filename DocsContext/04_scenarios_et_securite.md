@@ -124,12 +124,14 @@ Client       FastAPI          Agent 1         Outil (lecture seule)     Banque (
 3. Les contrôles automatiques n°1 à 5 (`revalidate_auth`, `validate_beneficiary`, `validate_amount`, `validate_balance`, `validate_limits`) réussissent → génération de la `TransferConfirmationCard` (Bénéficiaire : Omar, Montant : 1000 DH, Motif : loyer).  
 4. L'utilisateur valide la carte de confirmation côté UI (Contrôle n°6, `request_confirmation`).  
 5. Le contrôle n°7 (`validate_otp`) se déclenche **systématiquement, quel que soit le montant** — affichage de l'`OtpModal`, code de démonstration valable 3 minutes, 3 tentatives maximum.  
-6. L'utilisateur saisit le code reçu ; validation côté Agent 2 (jamais déléguée au LLM, jamais journalisée en clair).  
-7. Appel de l'outil MCP `initiate_transfer` avec une `idempotency_key` unique ; requête signée HMAC-SHA256 (mesure transverse, voir §3).  
-8. Le serveur MCP appelle le Webhook n8n, qui transmet la même `idempotency_key` au `mock-banking-api`, lequel exécute l'opération simulée.  
-9. Le résultat remonte : mock-banking-api → n8n → MCP → Agent 2 → clôture de la tâche A2A (`completed`) → Agent 1\.  
-10. Journalisation immuable de la transaction (mesure transverse, voir §5).  
-11. L'Agent 1 restitue la confirmation à l'utilisateur en langage naturel.
+6. L'utilisateur saisit le code OTP dans l'`OtpModal`. Le frontend transmet directement ce code à l'endpoint FastAPI sécurisé `POST /api/transfers/{task_id}/verify-otp` — jamais à l'Agent 1, jamais via une tâche A2A.  
+7. FastAPI vérifie la session utilisateur, l'appartenance du `task_id`, l'état courant de la tâche, sa fenêtre de validité et le nombre de tentatives, puis transmet le code uniquement au `MockOtpService`, qui effectue la comparaison déterministe (`code_saisi == DEMO_OTP_CODE`).  
+8. FastAPI transmet à l'Agent 2 uniquement le résultat structuré `{task_id, otp_verified}`. Le code OTP brut n'est jamais transmis à l'Agent 1, au LLM, à la tâche A2A ou à l'Agent 2.  
+9. Si `otp_verified=true`, le nœud `validate_otp` autorise la poursuite du graphe : l'Agent 2 invoque l'outil MCP `initiate_transfer` avec une `idempotency_key` unique ; requête signée HMAC-SHA256 (mesure transverse, voir §3).  
+10. Le serveur MCP appelle le Webhook n8n, qui transmet la même `idempotency_key` au `mock-banking-api`, lequel exécute l'opération simulée.  
+11. Le résultat remonte : mock-banking-api → n8n → MCP → Agent 2 → clôture de la tâche A2A (`completed`) → Agent 1\.  
+12. Journalisation immuable de la transaction (mesure transverse, voir §5).  
+13. L'Agent 1 restitue la confirmation à l'utilisateur en langage naturel.
 
 Client   Agent1   Agent2(A2A)   MCP   n8n   Banque
 
@@ -145,7 +147,9 @@ Client   Agent1   Agent2(A2A)   MCP   n8n   Banque
 
   |\<--otp requis------------------|     |      |
 
-  |--code otp-----\>----------------\>   |      |
+  |--code otp brut--\> FastAPI --\> MockOtpService (comparaison déterministe)
+
+                      FastAPI --\> Agent2 : { task\_id, otp\_verified }
 
   |        |         |--MCP tool-\>|     |      |
 
@@ -173,7 +177,7 @@ Client   Agent1   Agent2(A2A)   MCP   n8n   Banque
 | Assainissement des entrées (anti-prompt injection / jailbreak) | **Mesure transverse** | Agent 1 & Agent 2 (couche de pré-traitement, avant le nœud de classification) | Séparation stricte instructions système / entrée utilisateur, détection de motifs d'instruction, limite de taille des messages, données RAG traitées comme non fiables (détail complet en §4.1) | **LLM01:2025 — Prompt Injection**, **LLM07:2025 — System Prompt Leakage** | Message neutralisé, réponse de refus standard, tentative journalisée (§5) |
 | Validation des règles métier (montant, solde, plafonds) | *= Contrôles fonctionnels n°3, 4, 5* | Agent 2 (`validate_amount`, `validate_balance`, `validate_limits`) | Comparaison programmatique en `Decimal` (non déléguée au LLM) contre le solde réel et les plafonds `DAILY_TRANSFER_LIMIT` / `MONTHLY_TRANSFER_LIMIT` | **LLM06:2025 — Excessive Agency**, **LLM10:2025 — Unbounded Consumption** | `failed: insufficient_funds` ou `failed: limit_exceeded`, interception **avant** toute demande d'OTP |
 | Confirmation explicite de l'utilisateur | *= Contrôle fonctionnel n°6* | Frontend (`TransferConfirmationCard`) \+ Agent 2 (`request_confirmation`) | Action UI positive requise, aucune confirmation déduite d'un texte libre ambigu | **LLM05:2025 — Improper Output Handling** | `failed: user_cancelled`, tâche A2A close |
-| Authentification forte par OTP — **obligatoire pour tout virement, sans seuil ni exception** | *= Contrôle fonctionnel n°7* | Agent 2 (`validate_otp`) \+ `MockOtpService` (simulation, voir §4.3) | Code de démonstration configurable, fenêtre de validité de 180 secondes, compteur de tentatives limité à 3, jamais validé par le LLM | **LLM06:2025 — Excessive Agency** | `failed: invalid_otp` après 3 échecs ou `failed: otp_expired` (§4.3) |
+| Authentification forte par OTP — **obligatoire pour tout virement, sans seuil ni exception** | *= Contrôle fonctionnel n°7* | FastAPI (endpoint `/api/transfers/{task_id}/verify-otp`), `MockOtpService` (comparaison, voir §4.4) et Agent 2 (`validate_otp`) | FastAPI reçoit le code OTP brut et le transmet uniquement au `MockOtpService`, qui effectue la comparaison déterministe (code de démonstration configurable, fenêtre de validité de 180 secondes, compteur de tentatives limité à 3) ; l'Agent 2 ne reçoit que le résultat structuré `otp_verified`, jamais le code ; le code OTP n'est jamais validé par le LLM | **LLM06:2025 — Excessive Agency** | `failed: invalid_otp` après 3 échecs ou `failed: otp_expired` (§4.3) |
 | Signature HMAC-SHA256 des appels MCP → n8n | **Mesure transverse** | Serveur MCP | En-tête `X-Webhook-Signature` calculé sur le corps de la requête avec un secret partagé ; vérification côté n8n avant exécution | **LLM06:2025 — Excessive Agency**, intégrité de la chaîne d'exécution | Requête rejetée par n8n (HTTP 401), alerte SOC |
 | Anti-rejeu | **Mesure transverse** | Agent 2 (`jti` du jeton de délégation) | Un `jti` déjà consommé ne peut pas être réutilisé pour rejouer une tâche A2A ; le jeton de délégation a une durée de vie courte (voir `02_architecture_multi_agents.md` §4.2bis) | **LLM06:2025 — Excessive Agency** | Jeton rejeté, `failed: unauthenticated` |
 | Idempotence des virements | **Mesure transverse** | Agent 2 → MCP → n8n → mock-banking-api | `idempotency_key` unique générée avant exécution et propagée sans modification sur toute la chaîne ; une même clé ne produit jamais plus d'un virement (détail complet en §3 de ce document, sous-section "Idempotence et retry") | Intégrité financière (au-delà du périmètre OWASP LLM) | En cas de rejeu, le résultat déjà enregistré est renvoyé tel quel, aucune nouvelle exécution |
@@ -263,7 +267,7 @@ Client   Agent1   Agent2(A2A)   MCP   n8n   Banque
 
       │             ▼          ▼
 
-      │        completed   tentative \+= 1
+      │   otp\_verified=true   tentative \+= 1
 
       │                        │
 
@@ -283,6 +287,8 @@ Client   Agent1   Agent2(A2A)   MCP   n8n   Banque
 
                                     fin de la tâche A2A)
 
+> **Chemin positif** : `otp_verified=true` ne mène **jamais** directement à `completed`. Il déclenche la reprise du graphe de l'Agent 2 au nœud `validate_otp`, qui poursuit ensuite vers l'outil MCP `initiate_transfer` → Webhook n8n → système bancaire (mock) → `completed`, exactement comme décrit à l'étape 9 du Scénario 4 (§2).
+
 - Compteur de tentatives limité à **3 essais**.  
 - Fenêtre de validité du code : **3 minutes** (180 secondes) à compter de l'émission ; passé ce délai, toute saisie est rejetée avec `failed: otp_expired`, indépendamment du compteur de tentatives. Cette expiration de 3 minutes est **indépendante** du TTL global de la tâche A2A (`A2A_TASK_TTL_MINUTES=10`, voir `02_architecture_multi_agents.md` §4.5).  
 - En cas d'échec définitif (3 tentatives ou expiration), le graphe de l'Agent 2 s'annule **automatiquement** — aucune opération ne reste dans un état intermédiaire ambigu. L'utilisateur doit reformuler intégralement sa demande de virement (nouvelle tâche A2A, nouveau code OTP).
@@ -292,9 +298,9 @@ Client   Agent1   Agent2(A2A)   MCP   n8n   Banque
 Pour ce MVP, aucun fournisseur SMS/email réel n'est intégré. L'envoi et la validation du code OTP sont assurés par un service conceptuel `MockOtpService` :
 
 - le code retourné est une valeur de démonstration **fixe et configurable**, `DEMO_OTP_CODE=123456` (voir `.env.example` dans `03_stack_technique.md`) ;  
-- ce code n'apparaît **jamais** dans les journaux d'audit (§5) — la validation produit uniquement un booléen `otp_valid: true/false` ;  
-- il n'est **jamais transmis** à n8n ni au mock-banking-api — ces composants ne reçoivent que le résultat `otp_verified: true` une fois la validation faite par l'Agent 2, jamais le code lui-même ;  
-- il n'est **jamais validé par le LLM** — la comparaison est un test programmatique strict (`code_saisi == DEMO_OTP_CODE`), à l'intérieur du nœud `validate_otp` ;  
+- le frontend envoie le code saisi à l'endpoint FastAPI sécurisé `POST /api/transfers/{task_id}/verify-otp` ; FastAPI transmet ce code uniquement au `MockOtpService`, qui effectue la comparaison déterministe (`code_saisi == DEMO_OTP_CODE`) ; **la validation n'est jamais effectuée par l'Agent 2** — le nœud `validate_otp` de l'Agent 2 ne vérifie que le résultat structuré `otp_verified` transmis par FastAPI et n'accède jamais au code brut ;  
+- ce code brut n'apparaît **jamais** dans les journaux d'audit (§5) — la validation produit uniquement un booléen `otp_verified: true/false` ;  
+- il n'est **jamais transmis** à l'Agent 1, au LLM, à une tâche A2A, à MCP, à n8n ni au mock-banking-api — seul le résultat `otp_verified` est transmis par FastAPI à l'Agent 2, jamais le code lui-même ;  
 - le frontend n'affiche qu'un numéro de téléphone masqué **fictif** (`phoneMasked`, ex. `"+212 6XX XX XX 42"`) — aucune donnée personnelle réelle n'est utilisée.
 
 > **Note de passage en production.** `MockOtpService` et `DEMO_OTP_CODE` sont strictement réservés à la démonstration académique. Un déploiement réel devrait remplacer ce composant par un véritable fournisseur OTP (SMS ou e-mail via un service tiers dédié), générant un code aléatoire à usage unique par opération — jamais un code fixe partagé.
@@ -319,7 +325,7 @@ Pour ce MVP, aucun fournisseur SMS/email réel n'est intégré. L'envoi et la va
 
   "user\_id": "usr\_48210",
 
-  "component": "agent2\_transaction",
+  "component": "otp\_service",
 
   "event": "otp\_validation\_attempt",
 
@@ -331,9 +337,7 @@ Pour ce MVP, aucun fournisseur SMS/email réel n'est intégré. L'envoi et la va
 
   "details": {
 
-    "otp\_provided": "\[REDACTED\]",
-
-    "otp\_valid": false,
+    "otp\_verified": false,
 
     "reason": "code\_mismatch"
 
@@ -348,7 +352,7 @@ Pour ce MVP, aucun fournisseur SMS/email réel n'est intégré. L'envoi et la va
 | `timestamp` | string (ISO 8601, UTC) | oui | Horodatage de l'événement |
 | `task_id` | string | oui | Identifiant de la tâche A2A, fil conducteur de bout en bout |
 | `user_id` | string | oui | Identifiant utilisateur (jamais son nom complet ou ses données personnelles) |
-| `component` | string | oui | Composant émetteur (`agent1_faq`, `agent2_transaction`, `mcp_server`, `n8n_workflow`) |
+| `component` | string | oui | Composant émetteur (`agent1_faq`, `agent2_transaction`, `mcp_server`, `n8n_workflow`, `backend_api`, `otp_service`) |
 | `event` | string | oui | Type d'événement (`auth_check`, `beneficiary_validation`, `otp_validation_attempt`, `transfer_executed`, …) |
 | `status` | `"success" | "failed"` | oui | Résultat de l'événement |
 | `security_flag` | string | `null` | non | Renseigné uniquement en cas de comportement suspect (ex. `"prompt_injection_suspected"`) |

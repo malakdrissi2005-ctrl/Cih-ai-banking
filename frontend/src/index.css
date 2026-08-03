@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-cih-surface text-gray-900;
+}
+
+/* Disposition telephone + desktop - seuil fixe a 900px en CSS pur (pas de classe Tailwind xl:),
+   pour rester fiable meme quand la mise a l'echelle du systeme d'exploitation reduit la largeur
+   CSS effective rapportee par le navigateur. Voir CLAUDE.md §9.2 et
+   DocsContext/05_interface_frontend.md §4. */
+.showcase-layout {
+  width: 100%;
+  min-height: 100vh;
+}
+
+.showcase-phone {
+  display: none;
+}
+
+.showcase-desktop {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .showcase-layout {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 24px;
+    width: min(1600px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 16px 0;
+    align-items: start;
+  }
+
+  .showcase-phone {
+    display: block;
+    width: 300px;
+  }
+}

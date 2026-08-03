@@ -1,0 +1,32 @@
+[
+  {
+    "user_id": "usr_001",
+    "username": "client001",
+    "display_name": "Client Démo 1",
+    "status": "active"
+  },
+  {
+    "user_id": "usr_002",
+    "username": "client002",
+    "display_name": "Client Démo 2",
+    "status": "active"
+  },
+  {
+    "user_id": "usr_003",
+    "username": "client003",
+    "display_name": "Client Démo 3",
+    "status": "active"
+  },
+  {
+    "user_id": "usr_004",
+    "username": "client004",
+    "display_name": "Client Démo 4",
+    "status": "active"
+  },
+  {
+    "user_id": "usr_005",
+    "username": "client005",
+    "display_name": "Client Démo 5",
+    "status": "active"
+  }
+]
