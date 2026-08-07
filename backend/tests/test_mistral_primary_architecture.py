@@ -155,6 +155,29 @@ def test_card_incident_reports_route_to_faq_no_auth(monkeypatch, message):
     assert result["requires_auth"] is False
 
 
+@pytest.mark.parametrize(
+    "message,expected_faq_query",
+    [
+        ("Mon compte est bloqué", "Que faire si mon compte est bloqué ou verrouillé"),
+        ("Mon compte est verrouillé", "Que faire si mon compte est bloqué ou verrouillé"),
+        ("Je n'arrive plus à accéder à mon compte", "Que faire si je n'arrive plus à accéder à mon compte"),
+    ],
+)
+def test_account_lock_incident_reports_route_to_faq_no_auth(monkeypatch, message, expected_faq_query):
+    # Regle ajoutee au prompt Mistral (llm_router._SYSTEM_PROMPT, voir
+    # test_llm_router.py) pour lever l'ambiguite avec balance_query (dont la
+    # definition a ete elargie pour couvrir les demandes generiques
+    # d'informations sur le compte) : un signalement de blocage/verrouillage
+    # de compte est une question de procedure (faq_search), jamais une donnee
+    # personnelle - meme principe que les incidents carte ci-dessus.
+    _mock_llm_response(monkeypatch, "faq_search", faq_query=expected_faq_query)
+    with patch("agents.agent1_faq.graph.build_personal_data_answer") as mocked_personal:
+        result = run_agent1(message, is_authenticated=True, user_id="usr_001", use_llm_router=True)
+    mocked_personal.assert_not_called()
+    assert result["intent"] == "faq_generale"
+    assert result["requires_auth"] is False
+
+
 def test_card_query_without_personal_marker_is_general_faq_no_auth(monkeypatch, banking_path):
     # Regle : card_query -> FAQ generale par defaut, sauf demande explicite
     # d'information personnelle sur la carte. Ici, aucun mot-cle
@@ -215,6 +238,47 @@ def test_kel_est_mon_sold_is_understood_as_balance_query(monkeypatch, banking_pa
     assert result["intent"] == "balance_query"
     expected_total = banking_db.get_total_balance("usr_001", db_path=banking_path)
     assert str(expected_total) in result["response"]
+
+
+# ---------------------------------------------------------------------------
+# Non-regression explicite (formulations exactes demandees) : la regle
+# ajoutee pour desambiguiser "compte bloque" ne doit jamais affecter les
+# vraies demandes de donnees personnelles ni le signalement de carte perdue.
+# ---------------------------------------------------------------------------
+
+
+def test_quel_est_mon_solde_still_balance_query(monkeypatch, banking_path):
+    _mock_llm_response(monkeypatch, "balance_query")
+    result = run_agent1(
+        "Quel est mon solde ?",
+        is_authenticated=True,
+        user_id="usr_001",
+        banking_db_path=banking_path,
+        use_llm_router=True,
+    )
+    assert result["intent"] == "balance_query"
+    expected_total = banking_db.get_total_balance("usr_001", db_path=banking_path)
+    assert str(expected_total) in result["response"]
+
+
+def test_donne_moi_mes_transactions_still_transactions_query(monkeypatch, banking_path):
+    _mock_llm_response(monkeypatch, "transactions_query")
+    result = run_agent1(
+        "Donne-moi mes transactions",
+        is_authenticated=True,
+        user_id="usr_001",
+        banking_db_path=banking_path,
+        use_llm_router=True,
+    )
+    assert result["intent"] == "transactions_query"
+    assert result["requires_auth"] is False
+
+
+def test_j_ai_perdu_ma_carte_still_card_query_not_confused_with_account_lock(monkeypatch):
+    _mock_llm_response(monkeypatch, "card_query", card_fields=["status"])
+    result = run_agent1("J'ai perdu ma carte", is_authenticated=True, user_id="usr_001", use_llm_router=True)
+    assert result["intent"] == "card_query"
+    assert result["requires_auth"] is False
 
 
 # ---------------------------------------------------------------------------

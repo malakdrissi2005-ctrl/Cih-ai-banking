@@ -3,6 +3,7 @@
 import pytest
 
 from agents.agent1_faq.banking_answers import build_personal_data_answer, classify_personal_intent
+from agents.agent1_faq.darija_normalization import normalize_darija_message
 from app.banking import banking_db
 
 
@@ -16,6 +17,20 @@ def banking_path(tmp_path):
 # ---------------------------------------------------------------------------
 # 1. Questions combinées sur la carte (multi-intentions)
 # ---------------------------------------------------------------------------
+
+
+def test_arabizi_general_account_information_maps_to_total_balance():
+    """Non-regression : "3afak 3tini lma3lomat 3la l7sab" (Arabizi, "donne-moi
+    les informations sur mon compte") produisait auparavant `recent_transactions`
+    au lieu de `total_balance`, faute de normalisation Darija (voir
+    `darija_normalization.py`/`language_detection.py`). Verifie la chaine
+    complete `normalize_darija_message` -> `classify_personal_intent`, telle
+    qu'utilisee reellement par le graphe (`graph.py::_security_guard_node`)."""
+    normalized = normalize_darija_message("3afak 3tini lma3lomat 3la l7sab")
+    parsed = classify_personal_intent(normalized)
+    assert parsed["intent"] == "total_balance"
+    assert parsed["intent"] != "recent_transactions"
+    assert parsed["intent"] != "card_information"
 
 
 def test_classify_status_and_both_limits_together():

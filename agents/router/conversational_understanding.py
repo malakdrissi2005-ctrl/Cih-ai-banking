@@ -30,8 +30,12 @@ LLM — architecture préparée pour une future recherche web, non implémentée
 """
 from __future__ import annotations
 
+import difflib
 import json
 import os
+import re
+import unicodedata
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -39,6 +43,110 @@ import httpx
 _DEFAULT_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_ROUTER_TIMEOUT_SECONDS", "10"))
 
 _VALID_DOMAINS = {"banking", "general"}
+
+# ---------------------------------------------------------------------------
+# Garde deterministe pre-LLM : reduit le risque qu'une vraie question
+# bancaire soit envoyee par erreur vers le General Agent (Gemini) si Mistral
+# se trompe. S'appuie sur `data/banking_keywords.json` (mainteni manuellement,
+# jamais modifie par ce module) - fichier absent/invalide => guard inactif
+# (listes vides), jamais un crash ni un blocage du demarrage du backend.
+# Meme philosophie de repli que le reste du projet : ce garde ne fait
+# qu'ELARGIR les cas resolus en "banking" avant tout appel LLM, il ne change
+# jamais le comportement existant pour un message qu'il ne reconnait pas.
+# ---------------------------------------------------------------------------
+
+# Racine du depot (agents/router/conversational_understanding.py ->
+# agents/router -> agents -> racine) - meme convention que
+# `agents/agent1_faq/rag.py::_REPO_ROOT`.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_BANKING_KEYWORDS_PATH = _REPO_ROOT / "data" / "banking_keywords.json"
+
+
+def _normalize_for_banking_check(text: str) -> str:
+    """Minuscule, sans accents - meme principe que
+    `agents.agent1_faq.classification._normalize`."""
+    decomposed = unicodedata.normalize("NFKD", text.lower())
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
+
+
+def _load_banking_keywords() -> dict:
+    """Charge `data/banking_keywords.json` et aplatit toutes les categories
+    de chaque langue en une seule liste de mots/expressions par langue.
+
+    Ne leve JAMAIS d'exception : fichier absent ou JSON invalide => listes
+    vides pour les trois langues - le garde (`_looks_like_banking`) se
+    comporte alors comme s'il etait desactive, sans jamais bloquer le
+    demarrage du backend."""
+    empty = {"fr": [], "darija_latn": [], "darija_ar": []}
+    try:
+        with open(_BANKING_KEYWORDS_PATH, encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return empty
+
+    flattened: dict = {}
+    for language in ("fr", "darija_latn", "darija_ar"):
+        categories = raw.get(language) if isinstance(raw, dict) else None
+        words: list[str] = []
+        if isinstance(categories, dict):
+            for category_words in categories.values():
+                if isinstance(category_words, list):
+                    words.extend(word for word in category_words if isinstance(word, str))
+        flattened[language] = words
+    return flattened
+
+
+# Charge une seule fois au niveau module - jamais relu a chaque appel.
+_BANKING_KEYWORDS = _load_banking_keywords()
+
+# Vocabulaire latin (FR + darija_latn) normalise, pour un matching de phrase
+# exacte (regex) ET pour la tolerance aux fautes de frappe (mots isoles).
+_LATIN_KEYWORDS_NORMALIZED = sorted(
+    {
+        _normalize_for_banking_check(word)
+        for word in _BANKING_KEYWORDS["fr"] + _BANKING_KEYWORDS["darija_latn"]
+        if word.strip()
+    },
+    key=len,
+    reverse=True,
+)
+_LATIN_KEYWORD_PATTERN = (
+    re.compile(r"\b(" + "|".join(re.escape(word) for word in _LATIN_KEYWORDS_NORMALIZED) + r")\b")
+    if _LATIN_KEYWORDS_NORMALIZED
+    else None
+)
+_FUZZY_VOCAB = {token for phrase in _LATIN_KEYWORDS_NORMALIZED for token in phrase.split() if token}
+
+
+def _looks_like_banking(message: str) -> bool:
+    """Garde deterministe : True si `message` contient un mot/expression
+    reconnu de `data/banking_keywords.json` - correspondance exacte darija
+    arabe (mot brut), correspondance exacte FR/darija_latn (normalisee), ou
+    correspondance approximative tolerante aux fautes de frappe. Ne leve
+    JAMAIS d'exception : un probleme ici ne doit jamais empecher
+    `classify_domain` de repondre."""
+    try:
+        if not message:
+            return False
+
+        if any(word in message for word in _BANKING_KEYWORDS["darija_ar"]):
+            return True
+
+        normalized = _normalize_for_banking_check(message)
+
+        if _LATIN_KEYWORD_PATTERN is not None and _LATIN_KEYWORD_PATTERN.search(normalized):
+            return True
+
+        for token in re.findall(r"\w+", normalized):
+            if len(token) < 4:
+                continue
+            if difflib.get_close_matches(token, _FUZZY_VOCAB, n=1, cutoff=0.82):
+                return True
+
+        return False
+    except Exception:
+        return False
+
 
 _SYSTEM_PROMPT = """Tu es un routeur de DOMAINE pour un assistant. Détermine si la question de \
 l'utilisateur concerne la BANQUE (compte, solde, carte, virement, opérations, plafond, RIB, \
@@ -148,6 +256,9 @@ def classify_domain(message: str, use_llm_router: bool = False, timeout: Optiona
     désactivé par défaut, activé par la dépendance FastAPI
     `backend/app/routers/chat.py`).
     """
+    if _looks_like_banking(message):
+        return {"domain": "banking", "intent": "unclear", "needs_web": False}
+
     if use_llm_router:
         result = _classify_with_llm(message, timeout=timeout)
         if result is not None:

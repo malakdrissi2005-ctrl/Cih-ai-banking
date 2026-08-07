@@ -18,18 +18,34 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from google.api_core import exceptions as google_exceptions
 
 from agents.general_agent import gemini_client
+from agents.general_agent import general_agent as general_agent_module
 from agents.general_agent.general_agent import (
     GEMINI_NOT_CONFIGURED_MESSAGE,
     GENERAL_AGENT_UNAVAILABLE_MESSAGE,
     run_general_agent,
 )
 from agents.general_agent.gemini_client import GeminiClient, GeminiNotConfiguredError, GeminiRequestError
+from agents.general_agent.gemini_key_manager import GeminiKeyManager
 from agents.router import conversational_understanding, router
 from agents.router.conversational_understanding import _validate_and_normalize, classify_domain
 from app.main import app
 from app.routers.chat import get_use_llm_router_dependency
+
+
+@pytest.fixture(autouse=True)
+def _isolate_gemini_keys(monkeypatch):
+    """Le vrai `.env` (charge par `app.main.load_dotenv`) peut contenir de
+    vraies `GEMINI_API_KEY_1/2/3` - on les efface avant CHAQUE test de ce
+    fichier pour que les tests qui posent `GOOGLE_API_KEY="fake-key-for-tests"`
+    (ou le suppriment) ne soient jamais court-circuites par une vraie cle
+    presente dans l'environnement reel. Les tests de rotation ci-dessous
+    reposent ("Rotation automatique...") les definissent explicitement."""
+    monkeypatch.delenv("GEMINI_API_KEY_1", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY_2", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY_3", raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +149,20 @@ def test_run_general_agent_missing_api_key_returns_clear_message(monkeypatch):
     assert result["response"] == GEMINI_NOT_CONFIGURED_MESSAGE
     assert result["requires_auth"] is False
     assert result["intent"] == "general_query"
+
+
+def test_gemini_not_configured_message_reflects_multi_key_support():
+    """Régression : le message affiché à l'utilisateur final ne doit jamais ne
+    mentionner que l'ancienne variable à clé unique (`GOOGLE_API_KEY`) — depuis
+    la rotation multi-clés (`gemini_key_manager.py`), `GEMINI_API_KEY_1/2/3`
+    sont les variables prioritaires. Avant correctif, ce message (distinct de
+    celui de `GeminiNotConfiguredError` dans `gemini_client.py`, déjà correct)
+    ne citait que `GOOGLE_API_KEY`, devenu incohérent avec la configuration
+    réelle prise en charge."""
+    assert "GEMINI_API_KEY_1" in GEMINI_NOT_CONFIGURED_MESSAGE
+    assert "GEMINI_API_KEY_2" in GEMINI_NOT_CONFIGURED_MESSAGE
+    assert "GEMINI_API_KEY_3" in GEMINI_NOT_CONFIGURED_MESSAGE
+    assert "GOOGLE_API_KEY" in GEMINI_NOT_CONFIGURED_MESSAGE
 
 
 def test_run_general_agent_request_error_returns_graceful_message(monkeypatch):
@@ -300,3 +330,161 @@ def test_api_chat_endpoint_routes_banking_question_to_agent1_never_gemini(monkey
         assert data["intent"] != "general_query"
     finally:
         app.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------------------
+# 6. Rotation automatique entre plusieurs cles Gemini
+#    (agents/general_agent/gemini_key_manager.py) : la cle active bascule
+#    automatiquement sur la suivante en cas d'echec LIE A LA CLE (quota
+#    epuise, cle invalide) - jamais pour une autre erreur (reseau, reponse
+#    vide...), qui echoue immediatement sans gaspiller les autres cles.
+# ---------------------------------------------------------------------------
+
+
+def _install_fake_gemini_sdk(monkeypatch, key_behaviors: dict):
+    """Simule `genai.configure`/`genai.GenerativeModel` : associe un
+    comportement ("success"/"quota"/"invalid_key"/"other") a chaque cle API,
+    pour tester la rotation sans aucun appel reseau reel. `state` capture la
+    derniere cle configuree (comme le ferait le vrai SDK, en interne)."""
+    state = {"configured_key": None}
+
+    def fake_configure(api_key):
+        state["configured_key"] = api_key
+
+    class FakeGenerativeModel:
+        def __init__(self, model_name):
+            pass
+
+        def generate_content(self, prompt):
+            behavior = key_behaviors.get(state["configured_key"], "success")
+            if behavior == "quota":
+                raise google_exceptions.ResourceExhausted("429 You exceeded your current quota")
+            if behavior == "invalid_key":
+                raise google_exceptions.InvalidArgument('400 API key not valid. [reason: "API_KEY_INVALID"]')
+            if behavior == "other":
+                raise RuntimeError("network glitch, sans lien avec la cle")
+
+            class _FakeResponse:
+                text = f"reponse via {state['configured_key']}"
+
+            return _FakeResponse()
+
+    monkeypatch.setattr(gemini_client.genai, "configure", fake_configure)
+    monkeypatch.setattr(gemini_client.genai, "GenerativeModel", FakeGenerativeModel)
+    return state
+
+
+def test_key_manager_falls_back_to_legacy_google_api_key_when_no_numbered_keys(monkeypatch):
+    monkeypatch.setenv("GOOGLE_API_KEY", "legacy-key")
+    manager = GeminiKeyManager()
+    assert manager.current_key() == "legacy-key"
+    assert manager.current_key_number() == 1
+
+
+def test_key_manager_prefers_numbered_keys_over_legacy(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY_1", "new-key-1")
+    monkeypatch.setenv("GOOGLE_API_KEY", "legacy-key")
+    manager = GeminiKeyManager()
+    assert manager.current_key() == "new-key-1"
+
+
+def test_key_manager_skips_absent_or_empty_numbered_keys(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY_1", "")
+    monkeypatch.setenv("GEMINI_API_KEY_2", "key-2")
+    manager = GeminiKeyManager()
+    assert manager.current_key() == "key-2"
+
+
+def test_key_rotation_case1_first_key_works(monkeypatch):
+    """Cas 1 : KEY_1 fonctionne -> reponse normale, aucune rotation."""
+    monkeypatch.setenv("GEMINI_API_KEY_1", "key-1")
+    monkeypatch.setenv("GEMINI_API_KEY_2", "key-2")
+    monkeypatch.setenv("GEMINI_API_KEY_3", "key-3")
+    _install_fake_gemini_sdk(monkeypatch, {"key-1": "success"})
+
+    result = GeminiClient().generate("test")
+    assert result == "reponse via key-1"
+
+
+def test_key_rotation_case2_quota_on_first_key_switches_to_second(monkeypatch):
+    """Cas 2 : KEY_1 retourne 429 -> KEY_2 utilisee, transparent pour l'appelant."""
+    monkeypatch.setenv("GEMINI_API_KEY_1", "key-1")
+    monkeypatch.setenv("GEMINI_API_KEY_2", "key-2")
+    monkeypatch.setenv("GEMINI_API_KEY_3", "key-3")
+    _install_fake_gemini_sdk(monkeypatch, {"key-1": "quota", "key-2": "success"})
+
+    result = GeminiClient().generate("test")
+    assert result == "reponse via key-2"
+
+
+def test_key_rotation_case3_first_two_keys_fail_switches_to_third(monkeypatch):
+    """Cas 3 : KEY_1 (quota) et KEY_2 (cle invalide) echouent -> KEY_3 utilisee."""
+    monkeypatch.setenv("GEMINI_API_KEY_1", "key-1")
+    monkeypatch.setenv("GEMINI_API_KEY_2", "key-2")
+    monkeypatch.setenv("GEMINI_API_KEY_3", "key-3")
+    _install_fake_gemini_sdk(monkeypatch, {"key-1": "quota", "key-2": "invalid_key", "key-3": "success"})
+
+    result = GeminiClient().generate("test")
+    assert result == "reponse via key-3"
+
+
+def test_key_rotation_case4_all_keys_fail_raises_clean_error(monkeypatch):
+    """Cas 4 : les 3 cles echouent -> GeminiRequestError propre (jamais une
+    exception brute du SDK tiers propagee a l'appelant)."""
+    monkeypatch.setenv("GEMINI_API_KEY_1", "key-1")
+    monkeypatch.setenv("GEMINI_API_KEY_2", "key-2")
+    monkeypatch.setenv("GEMINI_API_KEY_3", "key-3")
+    _install_fake_gemini_sdk(monkeypatch, {"key-1": "quota", "key-2": "quota", "key-3": "invalid_key"})
+
+    with pytest.raises(GeminiRequestError):
+        GeminiClient().generate("test")
+
+
+def test_key_rotation_case4_all_keys_fail_run_general_agent_returns_clean_message(monkeypatch):
+    """Cas 4, cote appelant : `run_general_agent` ne doit jamais planter ni
+    laisser fuiter l'exception - meme message de repli qu'aujourd'hui,
+    `general_agent.py` reste inchange."""
+    monkeypatch.setenv("GEMINI_API_KEY_1", "key-1")
+    monkeypatch.setenv("GEMINI_API_KEY_2", "key-2")
+    monkeypatch.setenv("GEMINI_API_KEY_3", "key-3")
+    _install_fake_gemini_sdk(monkeypatch, {"key-1": "quota", "key-2": "quota", "key-3": "quota"})
+
+    # Instance fraiche (jamais le singleton partage `_client`) pour ne pas
+    # laisser un gestionnaire de cles "epuise" fuiter vers d'autres tests qui
+    # utilisent run_general_agent apres celui-ci.
+    monkeypatch.setattr(general_agent_module, "_client", GeminiClient())
+
+    result = run_general_agent("test")
+    assert result["response"] == GENERAL_AGENT_UNAVAILABLE_MESSAGE
+    assert result["intent"] == "general_query"
+
+
+def test_key_rotation_non_key_related_error_fails_immediately_without_rotating(monkeypatch):
+    """Une erreur SANS lien avec la cle (reseau, etc.) echoue immediatement -
+    jamais de rotation gaspillee sur un probleme qui affecterait toutes les
+    cles de la meme facon."""
+    monkeypatch.setenv("GEMINI_API_KEY_1", "key-1")
+    monkeypatch.setenv("GEMINI_API_KEY_2", "key-2")
+    state = _install_fake_gemini_sdk(monkeypatch, {"key-1": "other"})
+
+    with pytest.raises(GeminiRequestError):
+        GeminiClient().generate("test")
+    # KEY_2 n'a jamais ete tentee.
+    assert state["configured_key"] == "key-1"
+
+
+def test_key_rotation_logs_expected_debug_messages(monkeypatch, capsys):
+    """Verifie le format exact des logs [GENAI] demandes."""
+    monkeypatch.setenv("GEMINI_API_KEY_1", "key-1")
+    monkeypatch.setenv("GEMINI_API_KEY_2", "key-2")
+    _install_fake_gemini_sdk(monkeypatch, {"key-1": "quota", "key-2": "success"})
+
+    GeminiClient().generate("test")
+
+    out = capsys.readouterr().out
+    assert "[GENAI] Using Gemini key 1" in out
+    assert "[GENAI] Quota exceeded on key 1" in out
+    assert "[GENAI] Current key failed, switching to next key" in out
+    assert "[GENAI] Switching to key 2" in out
+    assert "[GENAI] Using Gemini key 2" in out
+    assert "[GENAI] Response generated successfully" in out

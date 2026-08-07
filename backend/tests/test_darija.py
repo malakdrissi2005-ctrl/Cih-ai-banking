@@ -60,6 +60,52 @@ def test_balance_question_in_arabizi(collection, banking_path):
 
 
 # ---------------------------------------------------------------------------
+# Demande generale d'informations sur le compte (non-regression) : le message
+# Arabizi "3afak 3tini lma3lomat 3la l7sab" ("donne-moi les informations sur
+# mon compte") repondait auparavant par l'historique des transactions au lieu
+# d'un apercu du compte (total_balance) - le message n'etait pas reconnu comme
+# darija par `language_detection.py`, donc jamais normalise par
+# `darija_normalization.py`, donc envoye brut a Mistral (ou au repli
+# deterministe) qui n'avait aucun element pour le rattacher a "compte".
+# ---------------------------------------------------------------------------
+
+
+def test_general_account_information_request_in_arabizi(collection, banking_path):
+    result = run_agent1(
+        "3afak 3tini lma3lomat 3la l7sab",
+        is_authenticated=True,
+        user_id="usr_001",
+        collection=collection,
+        banking_db_path=banking_path,
+    )
+    assert result["intent"] == "personal_data"
+    assert result["requires_auth"] is False
+    # Doit repondre par un apercu du compte (total_balance, localise en darija
+    # latine par response_localizer) - jamais par l'historique des transactions
+    # ni par les informations de carte.
+    assert "45730.50" in result["response"]
+    response_lower = result["response"].lower()
+    assert "operation" not in response_lower
+    assert "carte" not in response_lower
+
+
+def test_general_account_information_request_in_arabic(collection, banking_path):
+    result = run_agent1(
+        "عطيني المعلومات على الحساب",
+        is_authenticated=True,
+        user_id="usr_001",
+        collection=collection,
+        banking_db_path=banking_path,
+    )
+    assert result["intent"] == "personal_data"
+    # Reponse localisee en darija arabe (response_localizer.localize_total_balance_answer) :
+    # meme non-regression, vocabulaire arabe cette fois (jamais "العمليات"/"كارط").
+    assert "45730.50" in result["response"]
+    assert "العمليات" not in result["response"]
+    assert "كارط" not in result["response"]
+
+
+# ---------------------------------------------------------------------------
 # Dernieres operations
 # ---------------------------------------------------------------------------
 
@@ -317,6 +363,76 @@ def test_card_limit_increase_action_unavailable_in_arabizi(collection, banking_p
     )
     assert result["intent"] == "compte_action"
     assert "mtwafrach" in result["response"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Audit de robustesse (ETAPE 2) : trois vraies ambiguites/incoherences
+# trouvees et corrigees - RIB, "code SMS" et "solde"/"transactions" ont ete
+# testes et se sont averes deja corrects (aucun changement necessaire).
+# ---------------------------------------------------------------------------
+
+
+def test_open_account_request_in_arabic_reaches_faq(collection, banking_path):
+    """Non-regression : "بغيت نحل حساب" (equivalent arabe de "bghit n7ell
+    compte", deja couvert en Arabizi) n'etait pas traduit avant recherche FAQ -
+    seul sujet du fichier sans sa paire arabe+latin. Toujours classe
+    faq_generale par defaut, mais la recherche ChromaDB est desormais faite
+    sur un texte francais normalise plutot que sur l'arabe brut."""
+    result = run_agent1("بغيت نحل حساب", collection=collection, banking_db_path=banking_path)
+    assert result["intent"] == "faq_generale"
+    assert "CIN" in result["response"]
+
+
+def test_beneficiaries_request_in_arabic(collection, banking_path):
+    """Non-regression (bug reel trouve par l'audit) : "شكون هوما البنيفيسيار
+    ديالي" ("qui sont mes beneficiaires") tombait dans faq_generale au lieu de
+    la vraie liste de beneficiaires - seule la version arabe etait cassee, le
+    francais et l'Arabizi fonctionnaient deja (le mot "beneficiaires" y
+    apparait tel quel, jamais traduit depuis l'arabe)."""
+    result = run_agent1(
+        "شكون هوما البنيفيسيار ديالي",
+        is_authenticated=True,
+        user_id="usr_001",
+        collection=collection,
+        banking_db_path=banking_path,
+    )
+    assert result["intent"] == "personal_data"
+    assert result["requires_auth"] is False
+    assert "بنيفيسيار" in result["response"]
+
+
+def test_lost_card_request_in_arabizi_matches_french_behavior(collection, banking_path):
+    """Non-regression, mise a jour apres le correctif classification.py
+    (`_is_card_incident`) : "khsart carte dyali" ("j'ai perdu ma carte") doit
+    converger vers le MEME comportement que la version francaise "J'ai perdu
+    ma carte", desormais correctement classee `faq_generale` (signalement
+    d'incident carte -> procedure publique, jamais une lecture de donnee
+    personnelle - voir classification.py, `_CARD_INCIDENT_PATTERNS`). Avant ce
+    correctif, la version francaise tombait elle-meme (a tort) dans
+    "personal_data" ; ce test verifiait alors seulement la convergence entre
+    langues sur ce comportement bugue - desormais les deux langues convergent
+    sur le comportement CORRECT."""
+    result = run_agent1(
+        "khsart carte dyali",
+        is_authenticated=True,
+        user_id="usr_001",
+        collection=collection,
+        banking_db_path=banking_path,
+    )
+    assert result["intent"] == "faq_generale"
+    assert result["requires_auth"] is False
+
+
+def test_lost_card_request_in_arabic_matches_french_behavior(collection, banking_path):
+    result = run_agent1(
+        "خسرت الكارط ديالي",
+        is_authenticated=True,
+        user_id="usr_001",
+        collection=collection,
+        banking_db_path=banking_path,
+    )
+    assert result["intent"] == "faq_generale"
+    assert result["requires_auth"] is False
 
 
 # ---------------------------------------------------------------------------

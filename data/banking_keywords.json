@@ -1,0 +1,155 @@
+
+Page
+ 
+1
+/
+1
+100 %
+{
+  "fr": {
+    "compte_et_agence": [
+      "compte", "comptes", "solde", "soldes", "relevé", "relevés",
+      "relevé bancaire", "relevé de compte", "IBAN", "RIB", "BIC",
+      "code SWIFT", "code guichet", "code banque", "clé RIB",
+      "agence", "agences", "agence bancaire", "guichet", "guichets",
+      "banque", "bancaire", "bancaires", "banquier", "banquière",
+      "conseiller", "conseillère", "conseiller clientèle", "client",
+      "cliente", "cotitulaire", "procuration", "mandataire",
+      "ouverture de compte", "ouvrir un compte", "fermeture de compte",
+      "fermer un compte", "clôture de compte", "clôturer un compte",
+      "compte courant", "compte joint", "compte indivis",
+      "compte professionnel", "compte entreprise", "compte non-résident",
+      "compte devise", "compte épargne", "compte sur carnet",
+      "numéro de compte", "code client", "identifiant client",
+      "espace client", "application bancaire", "appli banque",
+      "rendez-vous agence", "rdv agence", "conseiller bancaire",
+      "changement d'adresse", "mise à jour coordonnées"
+    ],
+    "carte": [
+      "carte", "cartes", "carte bancaire", "carte bleue", "CB",
+      "carte de crédit", "carte de débit", "carte virtuelle",
+      "carte prépayée", "carte gold", "carte premier", "carte classic",
+      "carte jeune", "carte junior", "Visa", "Mastercard",
+      "plafond", "plafonds", "plafond de paiement", "plafond de retrait",
+      "plafond mensuel", "plafond hebdomadaire", "code PIN", "PIN",
+      "code confidentiel", "cryptogramme", "CVV", "date d'expiration",
+      "sans contact", "paiement sans contact", "paiement mobile",
+      "wallet", "Apple Pay", "Google Pay", "TPE", "terminal de paiement",
+      "carte bloquée", "carte perdue", "carte volée", "carte expirée",
+      "carte défectueuse", "carte avalée", "renouvellement de carte",
+      "commander une carte", "activer ma carte", "opposition carte",
+      "faire opposition", "carte désactivée", "carte inactive",
+      "paiement en ligne", "achat internet", "achat international"
+    ],
+    "virement_et_beneficiaire": [
+      "virement", "virements", "virer", "vire", "vires", "virons",
+      "virez", "virent", "virerai", "virerais", "viré", "virée",
+      "transfert", "transferts", "transférer", "transfère", "transfères",
+      "transférons", "transférez", "transfèrent", "versement",
+      "versements", "verser", "verse", "verses", "versons", "versez",
+      "versent", "bénéficiaire", "bénéficiaires", "ajouter un bénéficiaire",
+      "supprimer un bénéficiaire", "virement permanent",
+      "virement instantané", "virement programmé", "ordre de virement",
+      "virement interne", "virement externe", "virement SEPA",
+      "virement international", "RIB bénéficiaire", "envoyer de l'argent",
+      "recevoir de l'argent", "faire un virement", "mandat", "Western Union",
+      "cash express"
+    ],
+    "operations_et_depenses": [
+      "transaction", "transactions", "opération", "opérations",
+      "dépense", "dépenses", "dépenser", "dépensé", "achat", "achats",
+      "paiement", "paiements", "payer", "paie", "paies", "payons",
+      "payez", "paient", "réglé", "règlement", "encaissement",
+      "encaisser", "débit", "débits", "débiter", "débité", "crédit",
+      "crédits", "créditer", "crédité", "retrait", "retraits", "retirer",
+      "retire", "retires", "retirons", "retirez", "retirent",
+      "retrait espèces", "espèces", "distributeur", "DAB",
+      "guichet automatique", "historique", "historique des opérations",
+      "dernières opérations", "mouvement", "mouvements", "récapitulatif",
+      "chèque", "chèques", "chéquier", "encaisser un chèque",
+      "restaurant", "restaurants", "transport", "courses",
+      "supermarché", "carburant", "essence", "assurance", "abonnement",
+      "logement", "loyer"
+    ],
+    "salaire_et_prelevement": [
+      "salaire", "salaires", "paie", "fiche de paie", "virement de salaire",
+      "rémunération", "revenu", "revenus", "prélèvement", "prélèvements",
+      "prélèvement automatique", "prélèvement SEPA", "facture", "factures",
+      "abonnement", "abonnements", "cotisation", "cotisations",
+      "domiciliation", "domicilier mon salaire"
+    ],
+    "credit_et_epargne": [
+      "crédit", "crédits", "prêt", "prêts", "prêt immobilier",
+      "prêt personnel", "prêt auto", "emprunt", "emprunts", "emprunter",
+      "rembourser", "remboursement", "remboursements",
+      "remboursement anticipé", "mensualité", "mensualités", "échéance",
+      "échéances", "échéancier", "tableau d'amortissement",
+      "différé de remboursement", "pénalités", "taux d'intérêt",
+      "intérêt", "intérêts", "intérêts débiteurs", "intérêts créditeurs",
+      "TAEG", "taux annuel effectif global", "simulation de prêt",
+      "capacité d'emprunt", "apport personnel", "garantie", "caution",
+      "hypothèque", "assurance emprunteur", "découvert",
+      "découvert autorisé", "agios", "épargne", "épargner", "carnet",
+      "livret", "livret d'épargne", "placement", "placements",
+      "assurance", "assurances", "assurance vie", "assurance auto",
+      "assurance habitation"
+    ],
+    "securite_et_incident": [
+      "fraude", "frauduleux", "frauduleuse", "piratage", "piraté",
+      "piratée", "usurpation", "usurpation d'identité", "hameçonnage",
+      "phishing", "arnaque", "escroquerie", "code OTP", "OTP",
+      "code de vérification", "mot de passe", "identifiant",
+      "session expirée", "compte bloqué", "compte verrouillé",
+      "compte suspendu", "compte piraté", "activité suspecte",
+      "transaction suspecte", "transaction non reconnue", "opposition",
+      "sécurité du compte", "accès bloqué", "blocage préventif",
+      "contestation", "litige", "remboursement fraude"
+    ],
+    "general_bancaire": [
+      "banque", "argent", "montant", "devise", "taux de change",
+      "dirham", "dirhams", "MAD", "euro", "euros", "dollar", "dollars",
+      "frais bancaires", "commission", "commissions", "tarif", "tarifs",
+      "tarification", "service client", "réclamation", "litige",
+      "conditions générales", "convention de compte"
+    ]
+  },
+  "darija_latn": {
+    "argent_et_compte": [
+      "flous", "flouss", "sold", "sarf", "sarraf", "saraf", "ch7al",
+      "chhal", "cha7al", "chal", "3ndi", "3andi", "andi", "l7sab",
+      "lhsab", "7sab", "hsab", "lisab", "wach 3ndi", "wach 3andi",
+      "chhal 3andi", "chhal 3ndi", "compte dyali", "rib dyali",
+      "iban dyali"
+    ],
+    "carte": [
+      "carte dyali", "khsart carte", "khsart lkarta", "wdart carte",
+      "wdart lkarta", "carte khdama", "lkarta khdama", "carte bloquia",
+      "lkarta mssakra", "plafond dyal carte", "plafond dyal lkarta"
+    ],
+    "virement_et_operations": [
+      "n7awel", "n7awlek", "bghit n7awel", "bghit nchri", "hawala",
+      "howala", "retrait", "sa7ab", "n sa7eb", "prelevement",
+      "iqtitaa", "salaire dyali", "khdama", "n9bad", "n9bad flouss"
+    ],
+    "expressions_courantes": [
+      "dyali", "dyalek", "dyalna", "dyal", "bloke", "bloqui",
+      "msakar", "msdoud", "verrouille", "3afak 3tini", "afak 3tini",
+      "bghit lma3lomat", "bghit nchouf", "khasni", "khassni",
+      "ma3andich", "ma bqach 3ndi"
+    ]
+  },
+  "darija_ar": {
+    "argent_et_compte": [
+      "فلوس", "حساب", "رصيد", "شحال عندي", "شحال باقي عندي",
+      "حسابي", "الحساب ديالي"
+    ],
+    "carte_et_virement": [
+      "بطاقة", "الكارط", "تحويل", "حوالة", "خسرت الكارط",
+      "الكارط ديالي", "بلوكي الكارط"
+    ],
+    "general_bancaire": [
+      "بنك", "راتب", "الصالير", "قرض", "ائتمان", "توفير", "سحب",
+      "دفع", "فاتورة", "تحويل عاجل"
+    ]
+  }
+}

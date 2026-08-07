@@ -117,6 +117,161 @@ _ACCOUNT_ACTION_POSSESSIVE_PATTERNS = [
 # exemples de ce projet, qui utilisent "Quel est mon solde ?".
 _PROCEDURAL_FAQ_PREFIX = re.compile(r"^(comment|que faire)\b")
 
+# Signalement d'incident d'accès/blocage de COMPTE (ex. "mon compte est
+# bloqué", "mon compte est verrouillé", "mon accès est bloqué", "je n'arrive
+# plus à accéder à mon compte", "mon compte ne marche plus") — même principe
+# que pour les incidents CARTE (voir `card_query` dans `graph.py`, qui exclut
+# déjà "carte bloquée"/"carte perdue" de toute lecture de donnée personnelle) :
+# un signalement de panne/blocage est une question de PROCÉDURE, répondue par
+# la FAQ publique, jamais par une lecture de `banking_db` — aucun outil
+# existant n'expose de statut de blocage de compte à ce jour. Sans cette
+# exclusion, `\bmon compte\b` ci-dessous (`_PERSONAL_DATA_PATTERNS`) faisait
+# basculer ces messages vers "personal_data" dans le repli déterministe
+# (`classify_fallback`), alors que Mistral (`llm_router.py`) les classe
+# correctement en `faq_search` — incohérence entre les deux chemins, corrigée
+# ici pour que le repli déterministe soit fiable même sans LLM. Volontairement
+# restreint aux tournures d'incident : ne doit jamais intercepter une
+# véritable question de compte différente (ex. "Quel est le solde de mon
+# compte ?", toujours couvert par `_PERSONAL_DATA_PATTERNS` ci-dessous).
+_ACCOUNT_LOCK_INCIDENT_PATTERNS = [
+    re.compile(pattern)
+    for pattern in (
+        r"\bcompte\b.{0,20}\b(bloque|verrouille|suspendu)\b",
+        r"\b(bloque|verrouille|suspendu)\b.{0,20}\bcompte\b",
+        r"\bacces\b.{0,20}\bbloque\b",
+        r"\bbloque\b.{0,20}\bacces\b",
+        r"\barrive\s+(plus|pas)\s+a\s+(acceder|me connecter|entrer)\b",
+        r"\bcompte\b.{0,20}\bne (marche|fonctionne)\s+(plus|pas)\b",
+    )
+]
+
+
+def _is_account_lock_incident(normalized_text: str) -> bool:
+    """Détecte un signalement d'incident d'accès/blocage de compte — voir
+    commentaire de `_ACCOUNT_LOCK_INCIDENT_PATTERNS` ci-dessus. Déterministe,
+    aucun appel LLM, utilisée uniquement par `classify_intent`."""
+    return any(pattern.search(normalized_text) for pattern in _ACCOUNT_LOCK_INCIDENT_PATTERNS)
+
+
+# Signalement de FRAUDE/incident de sécurité (ex. "j'ai détecté une fraude sur
+# mon compte", "mon compte a été piraté", "activité suspecte sur mon compte",
+# "je ne reconnais pas cette transaction") — même principe que les incidents
+# carte/compte ci-dessus : un signalement d'incident est une question de
+# PROCÉDURE (répondue par la FAQ publique, voir `faq_053` dans
+# `data/faq_docs/faq.json`), jamais une lecture de donnée personnelle réelle.
+# Sans cette exclusion, `\bmon compte\b`/`\btransactions?\b`
+# (`_PERSONAL_DATA_PATTERNS`) faisaient basculer ces messages vers
+# "personal_data" (authentification requise) au lieu de donner immédiatement
+# une consigne de sécurité publique, urgente par nature.
+_FRAUD_INCIDENT_PATTERNS = [
+    re.compile(pattern)
+    for pattern in (
+        r"\bfraudes?\b",
+        r"\bfrauduleuse?\b",
+        r"\bpirate[e]?\b",
+        r"\bpiratage\b",
+        r"\busurpation\b",
+        r"\bcompromis(e)?\b",
+        r"\bactivite\b.{0,20}\bsuspecte\b",
+        r"\bne reconnais pas\b.{0,30}\btransaction\b",
+        r"\btransaction\b.{0,30}\bne reconnais pas\b",
+        r"\btransaction\b.{0,10}\bsuspecte\b",
+    )
+]
+
+
+def _is_fraud_incident(normalized_text: str) -> bool:
+    """Détecte un signalement de fraude/incident de sécurité — voir commentaire
+    de `_FRAUD_INCIDENT_PATTERNS` ci-dessus. Déterministe, aucun appel LLM,
+    utilisée uniquement par `classify_intent`."""
+    return any(pattern.search(normalized_text) for pattern in _FRAUD_INCIDENT_PATTERNS)
+
+
+# Signalement d'incident CARTE (perte, vol, panne) — même principe que les
+# incidents compte/fraude ci-dessus : un signalement de perte/vol/panne de
+# carte est une question de PROCÉDURE (voir `card_query` dans `graph.py`, qui
+# applique déjà cette distinction côté Mistral via
+# `_requests_personal_card_info`), jamais une lecture de donnée personnelle.
+# Sans cette exclusion, `\bma carte\b` (`_PERSONAL_DATA_PATTERNS`) faisait
+# basculer ces messages vers "personal_data" dans le repli déterministe
+# (`classify_fallback`), alors que Mistral classe correctement "J'ai perdu ma
+# carte" en `card_query` (traité ensuite comme FAQ par `graph.py`, sauf
+# demande explicite d'info précise) — incohérence entre les deux chemins,
+# corrigée ici pour que le repli déterministe soit fiable même sans LLM.
+# Volontairement exclu si le message demande EN PLUS une information précise
+# (numéro, statut, plafond) — reste alors "personal_data", même logique que
+# `_requests_personal_card_info` déjà utilisée par `graph.py`, reproduite ici
+# de façon autonome (ce module ne dépend jamais de `graph.py`).
+_CARD_INCIDENT_PATTERNS = [
+    re.compile(pattern)
+    for pattern in (
+        r"\bcarte\b.{0,20}\b(perdu|perdue|vole|volee)\b",
+        r"\b(perdu|perdue|vole|volee)\b.{0,20}\bcarte\b",
+        r"\bcarte\b.{0,20}\bne (marche|fonctionne)\s+(plus|pas)\b",
+    )
+]
+
+_CARD_PRECISE_INFO_PATTERNS = [
+    re.compile(pattern) for pattern in (r"\bnumero\b", r"\binformations?\b", r"\bstatut\b", r"\bplafond\b")
+]
+
+
+def _is_card_incident(normalized_text: str) -> bool:
+    """Détecte un signalement d'incident carte (perte, vol, panne) — voir
+    commentaire de `_CARD_INCIDENT_PATTERNS` ci-dessus. `False` si le message
+    demande en plus une information précise (numéro/statut/plafond) : reste
+    alors "personal_data". Déterministe, aucun appel LLM, utilisée uniquement
+    par `classify_intent`."""
+    if not any(pattern.search(normalized_text) for pattern in _CARD_INCIDENT_PATTERNS):
+        return False
+    return not any(pattern.search(normalized_text) for pattern in _CARD_PRECISE_INFO_PATTERNS)
+
+
+# ---------------------------------------------------------------------------
+# Généralisation architecturale (voir échange "je ne veux plus corriger les
+# erreurs question par question") : les trois exclusions ci-dessus
+# (_is_account_lock_incident/_is_fraud_incident/_is_card_incident) sont des
+# LISTES DE PHRASES SPÉCIFIQUES — chaque nouvelle façon de signaler un
+# problème (compte, carte, code SMS, accès, connexion, ou autre chose demain)
+# exigerait une nouvelle liste. Preuve : "j'ai un souci avec ma carte" ou
+# "mon compte a un problème de connexion" ne sont couverts par AUCUNE des
+# trois listes ci-dessus et retombaient à tort en "personal_data".
+#
+# Ce détecteur remplace l'approche "une liste par sujet" par une grille
+# combinatoire : un petit lexique FERMÉ et générique de mots-problème
+# (bloqué, perdu, volé, en panne, souci, problème, ne marche pas...) croisé
+# avec un petit ensemble de sujets bancaires (compte, carte, accès, connexion,
+# code, application, mot de passe). Le français a un nombre restreint de
+# façons de dire "problème" — contrairement au nombre quasi infini de façons
+# de décrire un incident précis — donc cette grille généralise à toute
+# formulation jamais vue, sans qu'aucune nouvelle liste spécifique soit
+# nécessaire à l'avenir. Les trois exclusions ci-dessus restent en place
+# (filet de sécurité redondant, déjà testé) ; ce détecteur est le mécanisme
+# qui généralise réellement.
+_GENERIC_PROBLEM_WORDS = (
+    "bloque", "bloquee", "verrouille", "verrouillee", "suspendu", "suspendue",
+    "perdu", "perdue", "vole", "volee", "panne", "souci", "probleme",
+    "casse", "cassee", "marche pas", "marche plus", "fonctionne pas",
+    "fonctionne plus", "erreur", "impossible",
+)
+_GENERIC_PROBLEM_SUBJECTS = (
+    "compte", "carte", "acces", "connexion", "code", "application", "mot de passe",
+)
+_GENERIC_PROBLEM_WORD_PATTERN = re.compile(r"\b(" + "|".join(_GENERIC_PROBLEM_WORDS) + r")\b")
+_GENERIC_PROBLEM_SUBJECT_PATTERN = re.compile(r"\b(" + "|".join(_GENERIC_PROBLEM_SUBJECTS) + r")\b")
+
+
+def _is_generic_problem_report(normalized_text: str) -> bool:
+    """Détecte tout signalement de problème générique : simple co-présence
+    d'un sujet bancaire et d'un mot-problème dans le message, sans exigence de
+    proximité — une question bancaire courte qui mentionne les deux n'est, en
+    pratique, jamais une coïncidence. Voir commentaire ci-dessus.
+    Déterministe, aucun appel LLM, utilisée uniquement par `classify_intent`."""
+    return bool(_GENERIC_PROBLEM_SUBJECT_PATTERN.search(normalized_text)) and bool(
+        _GENERIC_PROBLEM_WORD_PATTERN.search(normalized_text)
+    )
+
+
 # Détection des questions personnelles. Volontairement restreint à des
 # termes intrinsèquement personnels et possessifs (solde, mes transactions,
 # ma carte, mon salaire...) — jamais un simple mot comme "compte" ou "carte"
@@ -200,6 +355,15 @@ def classify_intent(message: str) -> Intent:
         return sensitive
 
     normalized = _normalize(message)
+
+    if (
+        _is_account_lock_incident(normalized)
+        or _is_fraud_incident(normalized)
+        or _is_card_incident(normalized)
+        or _is_generic_problem_report(normalized)
+    ):
+        return "faq_generale"
+
     is_procedural_faq_phrasing = bool(_PROCEDURAL_FAQ_PREFIX.match(normalized))
     if not is_procedural_faq_phrasing and any(pattern.search(normalized) for pattern in _PERSONAL_DATA_PATTERNS):
         return "personal_data"

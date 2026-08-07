@@ -109,11 +109,29 @@ directement à l'utilisateur et tu n'inventes JAMAIS de donnée bancaire (montan
 Ton unique rôle est de produire un objet JSON qui identifie l'intention de la question et, si pertinent, \
 une catégorie/période/liste de champs parmi des valeurs fixes.
 
+Principe général : base-toi sur le SENS de la question, jamais sur une correspondance de mots exacts. \
+La question peut être en français, en darija marocaine (alphabet arabe ou Arabizi), contenir des fautes \
+de frappe, ou une formulation que tu n'as jamais rencontrée. Les exemples ci-dessous illustrent des \
+CATÉGORIES de formulation, pas une liste exhaustive à mémoriser : applique le même principe à toute \
+variante équivalente, dans n'importe quelle langue ou tournure — ne te limite jamais à une \
+correspondance littérale avec ces exemples.
+
 Intentions valides (choisis-en une seule) :
-- faq_search : question générale publique (ex. ouvrir un compte, procédures, conditions).
-- balance_query : combien d'argent / solde sur le compte.
+- faq_search : question générale publique (procédures, conditions, ouverture de compte...) OU tout \
+signalement de problème concernant le COMPTE, l'ACCÈS ou la SÉCURITÉ (bloqué, verrouillé, suspendu, \
+inaccessible, fraude, piraté, transaction non reconnue...). Un signalement de problème est TOUJOURS une \
+question de procédure, jamais une consultation de donnée personnelle réelle — sauf si l'utilisateur \
+demande EN PLUS une information précise déjà couverte par un autre intent ci-dessous (ex. solde, liste \
+de transactions).
+- balance_query : l'utilisateur veut SAVOIR combien il a / le solde de son compte, OU demande une \
+information générale sur le compte (type, numéro, solde) sans préciser d'élément plus spécifique \
+(transactions, carte, bénéficiaires, salaire, prélèvement, dépenses). Différence avec faq_search : ici \
+l'utilisateur s'informe, il ne signale pas un problème.
+- card_query : toute question OU signalement concernant la carte (statut, plafonds, paiement en ligne/\
+international, perdue, volée, bloquée, ne fonctionne plus) — informative ou incident, c'est toujours \
+card_query ; la distinction FAQ publique / donnée personnelle est déjà gérée en aval, tu n'as pas à la \
+faire ici.
 - transactions_query : dernières opérations / historique.
-- card_query : statut de la carte, plafonds, paiement en ligne/international, carte perdue.
 - beneficiaries_query : bénéficiaires enregistrés.
 - spending_analysis : dépenses par catégorie ou analyse de dépenses.
 - salary_query : salaire reçu.
@@ -129,18 +147,16 @@ Périodes valides (optionnel) : current_month, last_month.
 Champs carte valides (uniquement pour card_query, optionnel, liste) : status, payment_limit, \
 withdrawal_limit, ecommerce_enabled, international_enabled.
 
-Exemples (la question peut être en français, en darija marocaine en alphabet \
-arabe, en darija translittérée/Arabizi, ou contenir des fautes de frappe — \
-traite ces variantes comme équivalentes, ne te limite jamais à une \
-correspondance de mots exacts) :
-- "شحال عندي فالحساب؟" -> {"intent": "balance_query"}
-- "حال عندي فالحساب" (faute de frappe, lettre manquante) -> {"intent": "balance_query"}
-- "ch7al 3ndi fl compte" (Arabizi) -> {"intent": "balance_query"}
-- "kel est mon sold" (faute de frappe) -> {"intent": "balance_query"}
-- "combien jai" -> {"intent": "balance_query"}
-- "Comment ouvrir un compte ?" -> {"intent": "faq_search", "faq_query": "Comment ouvrir un compte ?"}
-- "bghit n7ell compte" (Arabizi) -> {"intent": "faq_search", "faq_query": "Comment ouvrir un compte bancaire"}
-- "J'ai perdu ma carte" -> {"intent": "card_query"}
+Exemples illustratifs (une formulation différente relevant de la même catégorie, dans une autre langue \
+ou avec des fautes de frappe, doit être traitée de la même façon) :
+- "شحال عندي فالحساب؟" / "ch7al 3ndi fl compte" (Arabizi) / "kel est mon sold" (faute de frappe) / \
+"Donne-moi les informations sur mon compte" (générique, sans élément précis) -> {"intent": "balance_query"}
+- "Mon compte est bloqué" / "Je n'arrive plus à accéder à mon compte" / "J'ai détecté une fraude sur mon \
+compte" / "Mon compte a été piraté" -> {"intent": "faq_search", "faq_query": "<reformulation neutre du \
+problème signalé>"}
+- "Comment ouvrir un compte ?" / "bghit n7ell compte" (Arabizi) -> {"intent": "faq_search", "faq_query": "Comment ouvrir un compte bancaire"}
+- "J'ai perdu ma carte" / "khsart carte dyali" (Arabizi) / "خسرت الكارط ديالي" (arabe) -> {"intent": "card_query"}
+- "شكون هوما البنيفيسيار ديالي" (arabe, "qui sont mes bénéficiaires") -> {"intent": "beneficiaries_query"}
 - "slm" / "salam alaykoum" / "hi" -> {"intent": "greeting"}
 - "merci" / "chokran" -> {"intent": "thanks"}
 
@@ -380,16 +396,33 @@ Règles strictes :
 - Tu ne rédiges JAMAIS de réponse toi-même.
 - Tu ne modifies JAMAIS le texte des candidates.
 - Tu ne peux choisir qu'un index parmi ceux fournis ci-dessous, ou null.
+- Ne choisis JAMAIS une candidate évoquant une fraude, une opération suspecte ou un piratage si la \
+question de l'utilisateur ne mentionne EXPLICITEMENT aucun de ces termes — même si elle mentionne un \
+blocage, un problème d'accès ou de connexion. Un compte bloqué/verrouillé n'est pas, par défaut, une \
+fraude : préfère toujours la candidate qui parle de blocage/accès dans ce cas.
 
 Réponds UNIQUEMENT avec un objet JSON de la forme : {"best_match_index": <entier ou null>}
 
-Exemple :
+Exemples :
 Question de l'utilisateur : je veux ouvre un comrt
 Candidates :
 0: Quels documents sont nécessaires pour ouvrir un compte ?
 1: Comment fermer un compte bancaire ?
 2: Comment fonctionne un virement bancaire ?
-Objet JSON : {"best_match_index": 0}"""
+Objet JSON : {"best_match_index": 0}
+
+Question de l'utilisateur : Mon compte est bloqué
+Candidates :
+0: Que faire si mon compte client est temporairement bloqué après plusieurs tentatives ?
+1: Mon compte est bloqué, mon compte est verrouillé, ou mon accès est bloqué : que faire si je n'arrive plus à accéder à mon compte ou à mon espace client ?
+2: Que faire si je soupçonne une fraude sur mon compte ?
+Objet JSON : {"best_match_index": 0}
+
+Question de l'utilisateur : J'ai détecté une fraude sur mon compte
+Candidates :
+0: Que faire si mon compte semble bloqué ou verrouillé ?
+1: Que faire si je soupçonne une fraude sur mon compte ?
+Objet JSON : {"best_match_index": 1}"""
 
 
 def rerank_faq_candidates(

@@ -193,6 +193,14 @@ def classify_personal_intent(message: str) -> dict:
     ):
         return {"intent": "total_balance"}
 
+    # Demande générique d'informations sur le compte (type, numéro, solde),
+    # sans mot-clé plus précis (transactions/carte/bénéficiaires/salaire/
+    # prélèvement/dépenses, déjà écartés par les blocs ci-dessus) — repli
+    # déterministe vers le même outil que "balance_query" côté LLM Router
+    # (voir llm_router.py), utilisé quand Mistral est désactivé/indisponible.
+    if ("information" in normalized or "renseignement" in normalized) and "compte" in normalized:
+        return {"intent": "total_balance"}
+
     if "solde" in normalized and _DATE_PATTERN.search(normalized):
         reference_date = _find_reference_date(normalized)
         return {"intent": "balance_at_date", "date": reference_date}

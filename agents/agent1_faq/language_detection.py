@@ -47,6 +47,17 @@ _DARIJA_LATN_MARKERS = [
     "biha",
     "mn",
     "howa",
+    # --- Ajout : couverture d'une demande d'information générale sur le compte
+    # ("3afak 3tini lma3lomat 3la l7sab" - non détectée auparavant, aucun de ces
+    # tokens n'existant en français standard, donc aucun risque de faux positif) ---
+    "3afak",
+    "afak",
+    "3tini",
+    "3la",
+    "hsab",
+    "lhsab",
+    "ma3lomat",
+    "m3lomat",
 ]
 _DARIJA_LATN_PATTERN = re.compile(r"\b(" + "|".join(_DARIJA_LATN_MARKERS) + r")\b", re.IGNORECASE)
 

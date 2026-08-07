@@ -21,7 +21,8 @@ from agents.general_agent.gemini_client import GeminiClient, GeminiNotConfigured
 # absence de configuration (erreur opérateur) d'un échec d'appel ponctuel
 # (réseau, quota...) — voir exigence "Missing GOOGLE_API_KEY returns a clear error".
 GEMINI_NOT_CONFIGURED_MESSAGE = (
-    "L'assistant général (Gemini) n'est pas configuré : la variable GOOGLE_API_KEY est manquante."
+    "L'assistant général (Gemini) n'est pas configuré : aucune clé API n'est renseignée "
+    "(GEMINI_API_KEY_1, GEMINI_API_KEY_2, GEMINI_API_KEY_3, ou à défaut GOOGLE_API_KEY)."
 )
 GENERAL_AGENT_UNAVAILABLE_MESSAGE = "L'assistant général n'est pas disponible pour le moment. Merci de réessayer plus tard."
 

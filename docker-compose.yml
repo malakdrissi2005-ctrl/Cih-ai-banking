@@ -1,8 +1,9 @@
-# CIH AI Banking — Docker Compose (Backend FastAPI + Agent 1, Ollama/Mistral).
+# CIH AI Banking — Docker Compose (Frontend React, Backend FastAPI + Agent 1,
+# Ollama/Mistral).
 #
 # Perimetre volontairement limite a ce qui existe deja et fonctionne en local
 # (voir CLAUDE.md, DocsContext/03_stack_technique.md) : Agent 2, A2A, MCP,
-# n8n, mock-banking-api et le frontend ne sont pas concernes par ce fichier.
+# n8n et mock-banking-api ne sont pas concernes par ce fichier.
 #
 # Demarrage : docker compose up --build
 # Arret     : docker compose down (ajouter -v pour supprimer aussi le volume
@@ -10,7 +11,7 @@
 
 services:
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.32.5
     container_name: cih-ollama
     volumes:
       - ollama_data:/root/.ollama
@@ -61,6 +62,17 @@ services:
       - ./auth.db:/app/auth.db
       - ./backend/data:/app/backend/data
       - ./chroma_db:/app/chroma_db
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cih-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
     restart: unless-stopped
 
 volumes:

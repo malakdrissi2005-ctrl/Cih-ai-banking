@@ -286,3 +286,58 @@ def test_to_personal_intent_faq_search_returns_none():
 
 def test_to_personal_intent_unclear_maps_to_assistant_explain():
     assert llm_router.to_personal_intent({"intent": "unclear"}) == {"intent": "assistant_explain"}
+
+
+# ---------------------------------------------------------------------------
+# Desambiguisation "compte bloque"/"fraude" vs balance_query (non-regression) :
+# la definition de balance_query a ete elargie ("une demande d'informations
+# generales sur le compte... qui ne precise aucun element plus specifique")
+# pour couvrir "donne-moi les informations sur mon compte" - ce qui pouvait
+# entrer en collision avec un signalement de blocage/verrouillage/fraude sur
+# le compte, lui aussi une mention generique du compte sans element plus
+# specifique. Architecture (voir echange "je ne veux pas resoudre les
+# problemes utilisateur par utilisateur avec des regles") : le prompt encode
+# desormais un PRINCIPE general de desambiguisation (signalement de probleme
+# -> faq_search, jamais personal_data) plutot qu'une enumeration figee de
+# formulations litterales - verifie ici que ce principe est bien present,
+# sans dependre d'une liste exhaustive de phrases exactes qui grossirait a
+# chaque nouveau cas signale.
+# ---------------------------------------------------------------------------
+
+
+def test_system_prompt_contains_general_principle_not_literal_memorization():
+    # Garde-fou architectural : le prompt doit explicitement dire a Mistral
+    # de generaliser a partir du sens, pas de la correspondance de mots -
+    # sinon on retombe dans l'anti-pattern "une regle par bug signale".
+    prompt = llm_router._SYSTEM_PROMPT
+    assert "base-toi sur le SENS de la question" in prompt
+    assert "pas une liste exhaustive à mémoriser" in prompt
+
+
+def test_system_prompt_disambiguates_account_problem_reports_from_balance_query():
+    prompt = llm_router._SYSTEM_PROMPT
+    assert "signalement de problème concernant le COMPTE, l'ACCÈS ou la SÉCURITÉ" in prompt
+    assert "bloqué, verrouillé, suspendu" in prompt
+    assert "fraude, piraté" in prompt
+    assert "Un signalement de problème est TOUJOURS une" in prompt
+    # Exemple illustratif regroupe (plusieurs formulations -> une seule ligne,
+    # pas une ligne par phrase exacte).
+    assert '"Mon compte est bloqué"' in prompt
+    assert '"J\'ai détecté une fraude sur mon' in prompt
+    assert '{"intent": "faq_search"' in prompt
+
+
+def test_system_prompt_card_incidents_still_map_to_card_query_not_faq_search():
+    # Distinction critique preservee : un incident CARTE (perdue/volee/
+    # bloquee) reste card_query (graph.py gere deja la nuance FAQ/personnel
+    # en aval) - jamais confondu avec le principe "incident compte -> faq_search"
+    # ci-dessus, qui ne concerne que le compte/l'acces/la securite.
+    prompt = llm_router._SYSTEM_PROMPT
+    assert '"J\'ai perdu ma carte"' in prompt
+    assert "perdue, volée, bloquée" in prompt
+    # Verrouille l'exemple explicite lui-meme (pas seulement la presence du
+    # mot "card_query" ailleurs dans le prompt) - voir regression signalee
+    # "J'ai perdu ma carte" ne doit plus jamais perdre cet exemple lors d'une
+    # future simplification du prompt.
+    assert '"J\'ai perdu ma carte" / "khsart carte dyali"' in prompt
+    assert '-> {"intent": "card_query"}' in prompt

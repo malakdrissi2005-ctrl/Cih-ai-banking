@@ -52,6 +52,12 @@ _PHRASE_MAP: list[tuple[str, str]] = [
     # --- FAQ publique : ouverture de compte ---
     ("bghit n7ell compte bancaire", "je veux ouvrir un compte bancaire"),
     ("bghit n7ell compte", "je veux ouvrir un compte"),
+    # --- Ajout audit robustesse : equivalent arabe de "bghit n7ell compte"
+    # ci-dessus (seul manquant du fichier - tous les autres sujets ont deja
+    # leur paire arabe+latin). Sans cette entree, le texte arabe brut atteint
+    # quand meme le bucket faq_generale (bucket par defaut), mais sans etre
+    # traduit avant la recherche ChromaDB - qualite de recherche degradee. ---
+    ("بغيت نحل حساب", "je veux ouvrir un compte"),
     # --- Carte : plafonds ---
     ("شحال هو سقف الأداء والسحب", "quel est le plafond de paiement et le plafond de retrait de ma carte"),
     ("سقف الأداء", "plafond de paiement"),
@@ -62,6 +68,22 @@ _PHRASE_MAP: list[tuple[str, str]] = [
     ("واش نقدر نشري من موقع أجنبي", "puis-je acheter avec ma carte sur un site etranger"),
     ("wach n9der nchri biha mn internet", "ma carte permet-elle les paiements en ligne"),
     ("wach n9der nchri mn site etranger", "puis-je acheter avec ma carte sur un site etranger"),
+    # --- Informations générales sur le compte ---
+    ("عطيني المعلومات على الحساب", "quelles sont les informations de mon compte"),
+    ("3afak 3tini lma3lomat 3la l7sab", "quelles sont les informations de mon compte"),
+    ("afak 3tini lma3lomat 3la lhsab", "quelles sont les informations de mon compte"),
+    ("3tini lma3lomat 3la l7sab", "quelles sont les informations de mon compte"),
+    ("bghit lma3lomat 3la compte dyali", "quelles sont les informations de mon compte"),
+    # --- Ajout audit robustesse : "carte perdue" en Arabizi/arabe tombait dans
+    # faq_generale au lieu de personal_data (incoherent avec la version
+    # francaise "J'ai perdu ma carte", deja classee personal_data - voir
+    # classification.classify_intent, inchange). Mappe directement vers la
+    # phrase francaise declenchante exacte pour garantir, par construction, le
+    # meme resultat que la version francaise dans les deux chemins (LLM et
+    # deterministe) - jamais une nouvelle branche de logique. ---
+    ("khsart carte dyali", "j'ai perdu ma carte"),
+    ("wdart carte dyali", "j'ai perdu ma carte"),
+    ("خسرت الكارط ديالي", "j'ai perdu ma carte"),
     # --- Actions indisponibles (virement / carte) ---
     ("حول ليا 500 درهم", "je veux virer 500 MAD"),
     ("bghit n7awel 500", "je veux virer 500 MAD"),
@@ -74,6 +96,15 @@ _PHRASE_MAP.sort(key=lambda item: -len(item[0]))
 # 2. Repli mot-a-mot (vocabulaire general, voir enonce de la tache).
 # ---------------------------------------------------------------------------
 _WORD_MAP: list[tuple[str, str]] = [
+    # --- Ajout audit robustesse : "البنيفيسيار" (beneficiaires, emprunt arabise
+    # courant) n'etait couvert ni en phrase ni en mot - un message purement en
+    # arabe ("شكون هوما البنيفيسيار ديالي") tombait dans faq_generale au lieu
+    # de la vraie liste de beneficiaires (deja fonctionnel en francais et en
+    # Arabizi, ou "beneficiaires" apparait deja tel quel dans le texte). Le mot
+    # traduit suffit : `classify_personal_intent` ne cherche que la sous-chaine
+    # "beneficiaire", peu importe le reste de la phrase (meme principe que les
+    # autres entrees ci-dessous). ---
+    ("البنيفيسيار", "beneficiaires"),
     ("الحساب الجاري", "compte courant"),
     ("حساب التوفير", "compte epargne"),
     ("هاد الشهر", "ce mois-ci"),
@@ -103,6 +134,16 @@ _WORD_MAP: list[tuple[str, str]] = [
     ("sraft", "j'ai depense"),
     ("دخل ليا", "j'ai recu"),
     ("dkhal lia", "j'ai recu"),
+    ("lma3lomat", "les informations"),
+    ("ma3lomat", "informations"),
+    ("m3lomat", "informations"),
+    ("l7sab", "compte"),
+    ("lhsab", "compte"),
+    ("7sab", "compte"),
+    ("3tini", "donne-moi"),
+    ("3afak", "s'il te plait"),
+    ("afak", "s'il te plait"),
+    ("3la", "sur"),
     ("حول ليا", "je veux virer"),
     ("n7awel", "je veux virer"),
     ("بلوكي", "je veux bloquer"),
