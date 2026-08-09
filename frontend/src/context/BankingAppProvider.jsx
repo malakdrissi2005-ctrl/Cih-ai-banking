@@ -7,9 +7,11 @@ import {
   buildOtpRequestMessage,
   buildTransferResultMessage,
   buildCancelledMessage,
+  buildInitializingMessage,
   textMessage,
   DEMO_OTP_CODE,
   OTP_MAX_ATTEMPTS,
+  INITIALIZATION_DISPLAY_DURATION_MS,
 } from '../data/chatSimulation.js'
 import { loginRequest, checkSessionRequest, logoutRequest } from '../data/authApi.js'
 
@@ -41,6 +43,11 @@ export function BankingAppProvider({ children }) {
   const [isTyping, setIsTyping] = useState(false)
   const [activeAgent, setActiveAgent] = useState('assistant')
   const [draft, setDraft] = useState('')
+  // Purement UX, jamais lie a un etat reel (pas de backend/Ollama) : indique
+  // si le message d'initialisation a deja ete affiche pour cette session de
+  // navigation (reinitialise a chaque rechargement de page, comme le reste
+  // de l'etat de conversation ci-dessus) - voir sendMessage.
+  const [initializationShown, setInitializationShown] = useState(false)
 
   const suggestions = isAuthenticated ? authenticatedSuggestions : publicSuggestions
 
@@ -128,6 +135,17 @@ export function BankingAppProvider({ children }) {
   async function sendMessage(text) {
     appendMessage(textMessage('user', text))
     setDraft('')
+
+    // Premier message de la session de navigation uniquement (voir
+    // `initializationShown` ci-dessus) : affiche brievement un statut
+    // d'initialisation avant l'indicateur de saisie habituel - purement
+    // cosmetique, aucune dependance a l'etat reel du Backend/Ollama. Les
+    // messages suivants passent directement a l'indicateur de saisie.
+    if (!initializationShown) {
+      appendMessage(buildInitializingMessage())
+      await new Promise((resolve) => setTimeout(resolve, INITIALIZATION_DISPLAY_DURATION_MS))
+      setInitializationShown(true)
+    }
 
     setIsTyping(true)
     const sessionId = sessionStorage.getItem(SESSION_STORAGE_KEY)

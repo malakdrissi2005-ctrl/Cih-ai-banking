@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { simulateAssistantReply } from './chatSimulation.js'
+import { buildInitializingMessage, simulateAssistantReply } from './chatSimulation.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -76,5 +76,15 @@ describe('simulateAssistantReply - delegation integrale au Backend Agent 1', () 
 
     expect(result.message.content).toBe('Le service de l’assistant est temporairement indisponible.')
     expect(result.requiresAuth).toBe(false)
+  })
+})
+
+describe('buildInitializingMessage - statut UX (aucune dependance Backend/Ollama)', () => {
+  it('produit un message texte assistant standard, meme forme que les autres messages assistant', () => {
+    const message = buildInitializingMessage()
+
+    expect(message.role).toBe('assistant')
+    expect(message.type).toBe('text')
+    expect(message.content).toContain("en cours d'initialisation")
   })
 })

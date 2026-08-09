@@ -18,6 +18,17 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000
 
 const ASSISTANT_UNAVAILABLE_MESSAGE = 'Le service de l’assistant est temporairement indisponible.'
 
+// --- Statut d'initialisation (UX uniquement, premiere interaction) --------
+// Purement cosmetique : ne depend d'aucun etat reel du Backend/Ollama (pas de
+// /health, pas de mistral_ready) - juste une pause fixe avant le tout premier
+// message d'une session de navigation, pour donner l'impression que
+// l'assistant "demarre" avant de reflechir (voir BankingAppProvider.jsx::sendMessage).
+export const INITIALIZATION_DISPLAY_DURATION_MS = 5000
+
+export function buildInitializingMessage() {
+  return textMessage('assistant', "⭕ Assistant en cours d'initialisation...\nChargement du modèle IA...")
+}
+
 async function fetchAgentReply(rawText, sessionId) {
   const headers = { 'Content-Type': 'application/json' }
   if (sessionId) {
