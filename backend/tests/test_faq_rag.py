@@ -20,7 +20,15 @@ import pytest
 
 from agents.agent1_faq import llm_router
 from agents.agent1_faq.graph import _merge_faq_candidates, run_agent1
-from agents.agent1_faq.rag import get_faq_collection
+from agents.agent1_faq.rag import (
+    _VECTOR_DIM,
+    FaqEmbeddingDimensionMismatchError,
+    HashingBagOfWordsEmbedding,
+    _light_stem,
+    _tokenize,
+    get_faq_collection,
+    search_faq,
+)
 from scripts.ingest_faq import ingest_faq
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -56,6 +64,207 @@ def faq_collection(tmp_path):
     persist_dir = str(tmp_path / "chroma")
     ingest_faq(faq_path=faq_path, persist_dir=persist_dir, collection_name="faq_rag_test")
     return get_faq_collection(persist_dir=persist_dir, collection_name="faq_rag_test")
+
+
+# ---------------------------------------------------------------------------
+# 0. Embedding local : stemming léger + dimension 1024 (voir rag.py).
+#    Aucun de ces tests n'appelle Mistral — ils portent exclusivement sur
+#    l'embedding déterministe local.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "variants",
+    [
+        ("transaction", "transactions"),
+        ("carte", "cartes"),
+        ("virement", "virements"),
+        ("consulter", "consulte", "consultent"),
+        ("compte", "comptes"),
+        ("solde", "soldes"),
+        ("operation", "operations"),
+        ("depense", "depenses"),
+        ("beneficiaire", "beneficiaires"),
+    ],
+)
+def test_light_stem_makes_lexical_variants_converge(variants):
+    """Toutes les variantes d'un même mot doivent produire la MÊME racine.
+
+    La racine produite n'est pas forcément le singulier correct
+    ("carte" -> "cart") : seule la convergence compte, la même transformation
+    étant appliquée au document et à la requête."""
+    assert len({_light_stem(word) for word in variants}) == 1
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        # Protection 1 — longueur minimale de racine : "mois"/"pays" ne doivent
+        # jamais devenir "moi"/"pay" (fusion avec d'autres mots réels).
+        "mois",
+        "pays",
+        "fois",
+        "avis",
+        # Protection 2 — liste d'invariants (singuliers terminés par "s").
+        "frais",
+        "temps",
+        "cours",
+        "especes",
+        "interets",
+        # Protection 3 — tokens non alphabétiques et mots courts intacts.
+        "2026",
+        "cih",
+        "rib",
+    ],
+)
+def test_light_stem_protects_words_that_must_not_be_altered(token):
+    assert _light_stem(token) == token
+
+
+@pytest.mark.parametrize(("first", "second"), [("mois", "moi"), ("pays", "payer"), ("frais", "frai")])
+def test_light_stem_never_merges_distinct_words(first, second):
+    """Faux positif à éviter : deux mots de sens différents ne doivent jamais
+    se retrouver sur la même racine."""
+    assert _light_stem(first) != _light_stem(second)
+
+
+def test_light_stem_is_deterministic_across_calls():
+    """Déterminisme strict : l'ingestion et la recherche tournent dans deux
+    processus distincts et doivent produire exactement la même racine."""
+    assert [_light_stem("transactions") for _ in range(5)] == ["transaction"] * 5
+
+
+def test_tokenize_applies_stemming_inside_the_existing_pipeline():
+    """Le stemming doit être intégré à `_tokenize` (donc au pipeline
+    d'embedding existant), pas ajouté comme un système parallèle."""
+    assert _tokenize("Mes transactions et mes cartes") == ["mes", "transaction", "et", "mes", "cart"]
+    # Singulier et pluriel produisent la même suite de racines : c'est ce qui
+    # rend les deux formulations équivalentes pour l'embedding.
+    assert _tokenize("transactions cartes virements") == _tokenize("transaction carte virement")
+
+
+def test_embedding_now_produces_1024_dimensions():
+    assert _VECTOR_DIM == 1024
+    vectors = HashingBagOfWordsEmbedding()(["une question de test"])
+    assert len(vectors[0]) == 1024
+
+
+def test_embedding_vector_is_l2_normalized():
+    """Non-régression : la normalisation L2 (indispensable à la distance
+    cosinus) est conservée malgré le changement de dimension."""
+    vector = HashingBagOfWordsEmbedding()(["quels documents pour ouvrir un compte"])[0]
+    assert abs(sum(value * value for value in vector) ** 0.5 - 1.0) < 1e-9
+
+
+def test_stale_collection_is_refused_instead_of_being_used_silently(tmp_path, monkeypatch):
+    """PROTECTION CENTRALE : une collection ChromaDB créée par l'ancien
+    embedding (nom v1, 256 dimensions) ne doit JAMAIS être réutilisée
+    silencieusement — elle doit lever une erreur explicite indiquant la
+    marche à suivre.
+
+    La collection obsolète est simulée en réinstallant temporairement
+    l'ancienne signature (nom "hashing-bag-of-words", 256 dimensions) pour
+    l'ingestion, puis en la rouvrant avec le code courant."""
+    import agents.agent1_faq.rag as rag_module
+
+    class _LegacyEmbedding(rag_module.HashingBagOfWordsEmbedding):
+        @staticmethod
+        def name() -> str:
+            return "hashing-bag-of-words"
+
+        def __call__(self, input):  # noqa: A002 — signature imposée par ChromaDB
+            return [[0.0] * 255 + [1.0] for _ in input]
+
+    persist_dir = str(tmp_path / "chroma_legacy")
+    monkeypatch.setattr(rag_module, "HashingBagOfWordsEmbedding", _LegacyEmbedding)
+    legacy = rag_module.get_faq_collection(persist_dir=persist_dir, collection_name="faq_legacy_test")
+    legacy.upsert(ids=["x"], documents=["question ancienne"], metadatas=[{"question": "q", "answer": "a"}])
+    monkeypatch.undo()
+    rag_module._VERIFIED_COLLECTIONS.clear()
+
+    with pytest.raises(FaqEmbeddingDimensionMismatchError) as excinfo:
+        rag_module.get_faq_collection(persist_dir=persist_dir, collection_name="faq_legacy_test")
+
+    # Le message doit être actionnable, pas seulement techniquement correct.
+    assert "ingest_faq.py" in str(excinfo.value)
+
+
+def test_freshly_ingested_collection_is_accepted(tmp_path):
+    """Contrepartie du test précédent : une collection ingérée avec le code
+    courant doit s'ouvrir sans erreur (la garde ne doit pas sur-déclencher)."""
+    faq_path = tmp_path / "faq.json"
+    faq_path.write_text(json.dumps(FAQ_ENTRIES), encoding="utf-8")
+    persist_dir = str(tmp_path / "chroma_fresh")
+    ingest_faq(faq_path=faq_path, persist_dir=persist_dir, collection_name="faq_fresh_test")
+    collection = get_faq_collection(persist_dir=persist_dir, collection_name="faq_fresh_test")
+    assert collection.count() == len(FAQ_ENTRIES)
+
+
+def test_ingestion_contract_and_stable_ids_are_unchanged(tmp_path):
+    """Non-régression du contrat d'ingestion : les IDs fournis restent
+    inchangés et une ré-ingestion ne duplique rien, malgré le nouvel
+    embedding."""
+    faq_path = tmp_path / "faq.json"
+    faq_path.write_text(json.dumps(FAQ_ENTRIES), encoding="utf-8")
+    persist_dir = str(tmp_path / "chroma_ids")
+    first = ingest_faq(faq_path=faq_path, persist_dir=persist_dir, collection_name="faq_ids_test")
+    second = ingest_faq(faq_path=faq_path, persist_dir=persist_dir, collection_name="faq_ids_test")
+    assert first["collection_count"] == second["collection_count"] == len(FAQ_ENTRIES)
+    collection = get_faq_collection(persist_dir=persist_dir, collection_name="faq_ids_test")
+    assert sorted(collection.get(include=[])["ids"]) == sorted(entry["id"] for entry in FAQ_ENTRIES)
+
+
+_LEXICAL_FAQ_ENTRIES = [
+    {
+        "id": "test-consulter-transactions",
+        "question": "Comment consulter les transactions ?",
+        "answer": "Les transactions sont consultables depuis l'espace client.",
+    },
+    {
+        "id": "test-virement-fonctionnement",
+        "question": "Comment fonctionne un virement bancaire ?",
+        "answer": "Un virement transfère des fonds d'un compte à un autre.",
+    },
+]
+
+
+@pytest.fixture
+def lexical_faq_collection(tmp_path):
+    faq_path = tmp_path / "faq.json"
+    faq_path.write_text(json.dumps(_LEXICAL_FAQ_ENTRIES), encoding="utf-8")
+    persist_dir = str(tmp_path / "chroma_lex")
+    ingest_faq(faq_path=faq_path, persist_dir=persist_dir, collection_name="faq_lexical_test")
+    return get_faq_collection(persist_dir=persist_dir, collection_name="faq_lexical_test")
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_marker"),
+    [
+        # Pluriel -> singulier et inversement, sur la question ET la réponse.
+        ("Comment consulter la transaction ?", "espace client"),
+        ("Comment consulter les transaction ?", "espace client"),
+        ("Comment consultent les transactions ?", "espace client"),
+        # L'entrée voisine (virement) doit rester distincte malgré le stemming.
+        ("Comment fonctionnent les virements bancaires ?", "transfère des fonds"),
+    ],
+)
+def test_lexical_variants_find_the_right_faq_without_mistral(lexical_faq_collection, question, expected_marker):
+    """Recherche FAQ SANS Mistral (`use_llm_router=False`, donc chemin
+    `search_faq` top-1 brut, sans aucun reranking) : une variation lexicale
+    (singulier/pluriel, forme verbale) doit retrouver la bonne entrée grâce au
+    stemming — et ne pas rapatrier l'entrée voisine."""
+    result = run_agent1(question, collection=lexical_faq_collection, use_llm_router=False)
+    assert result["intent"] == "faq_generale"
+    assert expected_marker in result["response"]
+
+
+def test_search_faq_top1_matches_singular_and_plural_identically(lexical_faq_collection):
+    """Au niveau du RAG lui-même : la requête au singulier et au pluriel
+    doivent renvoyer exactement la même entrée FAQ."""
+    singular = search_faq(lexical_faq_collection, "consulter la transaction")
+    plural = search_faq(lexical_faq_collection, "consulter les transactions")
+    assert singular is not None and plural is not None
+    assert singular["question"] == plural["question"] == "Comment consulter les transactions ?"
 
 
 # ---------------------------------------------------------------------------
