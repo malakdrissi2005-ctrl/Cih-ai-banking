@@ -243,6 +243,106 @@ def test_generic_problem_report_does_not_over_trigger_on_public_faq_questions(me
     assert classify_intent(message) == "faq_generale"
 
 
+# ---------------------------------------------------------------------------
+# Formulations naturelles de synthèse personnelle — repli déterministe
+# (`classify_intent`, utilisé quand Mistral est indisponible/désactivé/unclear).
+# Voir classification.py, derniers patterns de `_PERSONAL_DATA_PATTERNS`.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Nouveaux patterns ajoutés (tombaient à tort dans faq_generale avant).
+        "Je veux un récapitulatif",
+        "Résumé de mes finances s'il te plaît",
+        "Bilan de mes finances",
+        "Quelle est ma situation financière ?",
+        # Déjà couverts AVANT l'ajout (via `mon compte`/`mes comptes`/`me reste`) :
+        # présents ici en non-régression, pour garantir qu'ils le restent.
+        "Donne-moi les détails de mon compte",
+        "Aperçu de mon compte",
+        "Combien il me reste ?",
+        "Fais le point sur mes comptes",
+    ],
+)
+def test_natural_account_overview_phrasings_reach_personal_data(message):
+    """Une demande de synthèse personnelle doit atteindre `personal_data`
+    (donc exiger une session) et jamais être traitée comme une FAQ publique."""
+    assert classify_intent(message) == "personal_data"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Question publique authentique sur le concept de compte : ne doit
+        # JAMAIS devenir personnelle du seul fait du mot "compte".
+        "Qu'est-ce qu'un compte bancaire ?",
+        "Comment ouvrir un compte ?",
+        # "financement" ne doit pas déclencher `\bmes finances\b` (frontière de
+        # mot) — question FAQ publique réelle de data/faq_docs/faq.json.
+        "La banque propose-t-elle des solutions de financement ou de crédit ?",
+        # Terme de synthèse générique SANS possessif ni sujet personnel.
+        "Quel est le résumé des conditions générales ?",
+    ],
+)
+def test_account_overview_patterns_do_not_create_false_positives(message):
+    """Non-régression faux positifs : les termes de synthèse ajoutés ne doivent
+    pas transformer une question publique en question personnelle."""
+    assert classify_intent(message) == "faq_generale"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Montant / somme / avoir disponible (nouveaux patterns ancrés).
+        "Quel montant ai-je encore ?",
+        "Quelle somme est disponible ?",
+        "Quel est le montant disponible sur mon compte ?",
+        "Quel est mon avoir disponible ?",
+        "Quel est le montant restant ?",
+        # Mouvements (synonyme d'opérations).
+        "Affiche mes mouvements",
+        "Mes derniers mouvements",
+        # Paiements sans possessif "mes".
+        "Quels paiements ai-je faits ?",
+    ],
+)
+def test_enriched_natural_phrasings_reach_personal_data(message):
+    """Formulations naturelles mesurées comme tombant à tort dans
+    `faq_generale` avant enrichissement."""
+    assert classify_intent(message) == "personal_data"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Question DÉFINITIONNELLE : porte sur un concept, pas sur les données
+        # du client. Corrige un faux positif pré-existant : "transaction"
+        # déclenchait `personal_data` via `_PERSONAL_DATA_PATTERNS`.
+        "Qu'est-ce qu'une transaction bancaire ?",
+        "Qu'est-ce qu'un solde comptable ?",
+        "C'est quoi un relevé bancaire ?",
+        "Que signifie le solde comptable ?",
+        "À quoi sert un relevé de compte ?",
+        # Mots nus non ancrés : ne doivent jamais suffire.
+        "Quel est le montant des frais de tenue de compte ?",
+        "Quelle somme faut-il pour ouvrir un compte ?",
+    ],
+)
+def test_definitional_and_unanchored_questions_stay_public(message):
+    """Non-régression faux positifs : une question de définition ou un mot
+    générique non ancré (montant/somme sans possessif ni "disponible") reste
+    une question publique."""
+    assert classify_intent(message) == "faq_generale"
+
+
+def test_definitional_guard_never_blocks_a_possessive_question():
+    """Le garde définitionnel ne doit jamais intercepter une vraie question
+    personnelle formulée familièrement ("c'est quoi MON solde ?")."""
+    assert classify_intent("C'est quoi mon solde ?") == "personal_data"
+
+
 def test_real_faq_json_is_not_misclassified_as_personal_or_action():
     """Régression : les 98 vraies questions de data/faq_docs/faq.json doivent
     toutes rester `faq_generale` (à l'exception du cas connu et documenté ci-dessus)."""

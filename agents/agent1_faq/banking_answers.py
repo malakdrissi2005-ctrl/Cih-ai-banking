@@ -53,6 +53,100 @@ _CATEGORY_KEYWORDS = {keyword: canonical for canonical, keywords in _CATEGORY_GR
 _SPENDING_VERB_PATTERN = re.compile(r"\bdepenses?\b|\bconsacres?\b")
 
 # ---------------------------------------------------------------------------
+# Demande de VUE D'ENSEMBLE d'un compte ("détails de mon compte", "aperçu de
+# mon compte", "récapitulatif de mon compte", "état de mes comptes"...).
+#
+# Même structure que `_CATEGORY_GROUPS` ci-dessus (groupes de synonymes +
+# recherche par frontière de mot) — jamais une seconde architecture parallèle.
+#
+# Généralise l'ancienne condition en dur `("information" in normalized or
+# "renseignement" in normalized) and "compte" in normalized`, qui ne
+# reconnaissait que deux formulations. La règle exige TOUJOURS la co-présence
+# d'un terme de synthèse ET d'un sujet de compte : un terme de synthèse seul
+# ("je veux un récapitulatif", sans préciser de quoi) reste volontairement
+# non résolu et retombe sur `assistant_explain` — réponse honnête pour une
+# demande réellement ambiguë, plutôt qu'une supposition arbitraire.
+_ACCOUNT_OVERVIEW_GROUPS = {
+    "terme_de_synthese": [
+        "information", "informations", "info", "infos",
+        "renseignement", "renseignements",
+        "detail", "details", "apercu", "recapitulatif", "recap", "resume",
+        "bilan", "synthese", "point", "etat", "situation", "vue",
+        # Verbes de CONSULTATION ("je veux consulter mon compte", "montre-moi
+        # mon compte", "affiche mon compte") : demander à voir son compte est
+        # une demande de vue d'ensemble. Sûrs à cet endroit uniquement grâce à
+        # l'ordre de la chaîne — "je veux voir mes bénéficiaires" ou "montre-moi
+        # mes dernières opérations" sont interceptés bien avant par leur
+        # intention spécifique (voir "NOTE D'ORDRE" plus bas).
+        "consulter", "consulte", "voir", "afficher", "affiche",
+        "montre", "montrer",
+        # Formulations de MONTANT DISPONIBLE ("quel est le montant disponible
+        # sur mon compte ?") — le mot nu ne suffit jamais, la co-présence d'un
+        # sujet de compte reste exigée.
+        "montant", "somme", "avoir", "disponible", "restant",
+    ],
+    "sujet_de_compte": ["compte", "comptes", "finances", "financiere"],
+}
+
+# Termes de synthèse AUTO-SUFFISANTS : reconnus même sans sujet explicite
+# ("je veux un récapitulatif", sans préciser de quoi).
+#
+# Pourquoi c'est sûr malgré l'absence de sujet : cette règle n'est évaluée
+# qu'en TOUTE FIN de la chaîne de `classify_personal_intent`, après carte,
+# bénéficiaires, dépenses, solde daté, salaire, prélèvement, paiements et
+# opérations. Un message qui parvient jusqu'ici en portant le seul mot
+# "récapitulatif" ne contient donc, par construction, aucun signal plus
+# précis — le résoudre vers `total_balance` (total + détail par compte, la
+# synthèse de compte standard) est le comportement le plus utile et le moins
+# risqué. "récapitulatif de mes opérations" reste intercepté bien avant, par
+# `recent_transactions`.
+#
+# Volontairement limité à ces deux termes : "resume", "bilan", "detail",
+# "point", "etat", "situation", "information" restent soumis à la présence
+# d'un sujet, car ils sont courants hors contexte bancaire personnel
+# (ex. "le résumé des conditions générales") et créeraient des faux positifs.
+_SELF_SUFFICIENT_OVERVIEW_TERMS = ["recapitulatif", "recap"]
+
+# Demande de MONTANT DISPONIBLE sans mentionner le mot "compte" ni "solde"
+# ("quel montant ai-je encore ?", "quelle somme est disponible ?", "quel est
+# mon avoir disponible ?"). Même structure de groupes que ci-dessus : la
+# co-présence des deux familles est TOUJOURS exigée — "montant" ou "somme"
+# seuls ne déclenchent jamais rien (ils apparaissent dans des questions
+# publiques sur les frais, les plafonds, etc.).
+_AVAILABLE_AMOUNT_GROUPS = {
+    "terme_de_montant": ["montant", "somme", "avoir", "argent", "fonds"],
+    "terme_de_disponibilite": ["disponible", "disponibles", "restant", "restants", "reste", "encore"],
+}
+
+
+def _is_available_amount_request(normalized_text: str) -> bool:
+    """Vrai si le message demande le montant encore disponible, sans employer
+    les mots "solde" ni "compte" — voir `_AVAILABLE_AMOUNT_GROUPS`."""
+    return all(
+        any(re.search(rf"\b{keyword}\b", normalized_text) for keyword in keywords)
+        for keywords in _AVAILABLE_AMOUNT_GROUPS.values()
+    )
+
+
+def _is_account_overview_request(normalized_text: str) -> bool:
+    """Vrai si le message demande une vue d'ensemble d'un compte — voir
+    commentaire de `_ACCOUNT_OVERVIEW_GROUPS`. Déterministe, aucun appel LLM.
+
+    N'a volontairement AUCUNE garde sur "carte" : la priorité de
+    `card_information` est déjà assurée structurellement par l'ordre de la
+    chaîne dans `classify_personal_intent` (le bloc carte est évalué en
+    premier), jamais par une exclusion ajoutée ici."""
+    if any(
+        re.search(rf"\b{keyword}\b", normalized_text) for keyword in _SELF_SUFFICIENT_OVERVIEW_TERMS
+    ):
+        return True
+
+    return all(
+        any(re.search(rf"\b{keyword}\b", normalized_text) for keyword in keywords)
+        for keywords in _ACCOUNT_OVERVIEW_GROUPS.values()
+    )
+
+# ---------------------------------------------------------------------------
 # Normalisation des périodes.
 # ---------------------------------------------------------------------------
 _CURRENT_MONTH_PATTERNS = [
@@ -162,6 +256,27 @@ def _find_requested_card_fields(normalized_text: str) -> list[str]:
     if mentions_international:
         fields.add("international_enabled")
 
+    # Demande GÉNÉRIQUE d'information sur la carte ("détails de ma carte",
+    # "aperçu de ma carte", "informations sur ma carte") : aucune information
+    # précise n'a été identifiée ci-dessus, mais le message porte clairement
+    # sur la carte du client. On retombe alors sur "status" — exactement la
+    # même valeur par défaut que le chemin Mistral
+    # (`llm_router.to_personal_intent` : card_query -> ["status"]), pour que
+    # les deux chemins restent cohérents.
+    #
+    # Appliqué UNIQUEMENT si `fields` est encore vide : ne modifie donc jamais
+    # le résultat d'une demande déjà précise (plafonds, paiement en ligne,
+    # statut explicite...), et ne change aucun comportement existant.
+    if (
+        not fields
+        and mentions_carte_word
+        and any(
+            re.search(rf"\b{keyword}\b", normalized_text)
+            for keyword in _ACCOUNT_OVERVIEW_GROUPS["terme_de_synthese"]
+        )
+    ):
+        fields.add("status")
+
     return [field for field in _CARD_FIELD_ORDER if field in fields]
 
 
@@ -193,13 +308,16 @@ def classify_personal_intent(message: str) -> dict:
     ):
         return {"intent": "total_balance"}
 
-    # Demande générique d'informations sur le compte (type, numéro, solde),
-    # sans mot-clé plus précis (transactions/carte/bénéficiaires/salaire/
-    # prélèvement/dépenses, déjà écartés par les blocs ci-dessus) — repli
-    # déterministe vers le même outil que "balance_query" côté LLM Router
-    # (voir llm_router.py), utilisé quand Mistral est désactivé/indisponible.
-    if ("information" in normalized or "renseignement" in normalized) and "compte" in normalized:
-        return {"intent": "total_balance"}
+    # NOTE D'ORDRE : la demande générique de vue d'ensemble d'un compte
+    # (anciennement testée ICI par `("information" or "renseignement") and
+    # "compte"`) a été DÉPLACÉE plus bas, après les intentions spécifiques
+    # (salaire, prélèvement, paiements, opérations). Raison : la règle est
+    # désormais élargie à d'autres synonymes ("détails", "aperçu",
+    # "récapitulatif"...) et, laissée à cette position, elle aurait pu voler
+    # des messages appartenant à une intention plus précise — ex.
+    # "récapitulatif de mes opérations sur mon compte" doit rester
+    # `recent_transactions`. Le résultat des formulations déjà supportées est
+    # strictement inchangé : aucune intention intermédiaire ne les intercepte.
 
     if "solde" in normalized and _DATE_PATTERN.search(normalized):
         reference_date = _find_reference_date(normalized)
@@ -214,15 +332,42 @@ def classify_personal_intent(message: str) -> dict:
     if "paiement" in normalized:
         return {"intent": "payments", "period": _find_period(normalized)}
 
-    if "operation" in normalized or "transaction" in normalized or "historique" in normalized:
+    # "mouvement(s)" : synonyme bancaire courant d'"opération" ("affiche mes
+    # mouvements", "mes derniers mouvements").
+    if (
+        "operation" in normalized
+        or "transaction" in normalized
+        or "historique" in normalized
+        or "mouvement" in normalized
+    ):
         return {"intent": "recent_transactions"}
 
-    # Formulations naturelles sans mot-clé "solde" explicite (ex. "Peux-tu me
-    # dire combien j'ai sur mon compte ?").
-    if "combien" in normalized and "j'ai" in normalized:
+    # Vue d'ensemble d'un compte — évaluée APRÈS toutes les intentions
+    # spécifiques ci-dessus (voir "NOTE D'ORDRE" plus haut), pour ne jamais
+    # leur voler un message. Couvre "détails/aperçu/récapitulatif/état/
+    # informations ... de mon compte" et "bilan/résumé de mes finances", tous
+    # résolus vers `total_balance` : c'est le seul outil de lecture existant
+    # qui produit une vraie synthèse de compte (total + détail par compte).
+    if _is_account_overview_request(normalized):
         return {"intent": "total_balance"}
 
-    if "solde" in normalized or "argent" in normalized:
+    # Formulations naturelles sans mot-clé "solde" explicite (ex. "Peux-tu me
+    # dire combien j'ai sur mon compte ?", "Combien il me reste ?").
+    # "me reste" comblait un trou pré-existant : `classification.py` classait
+    # déjà ces messages en `personal_data` via `\bme reste\b`, mais aucune
+    # branche ici ne les reconnaissait — ils retombaient donc sur
+    # `assistant_explain` au lieu du solde réel. Incohérence entre les deux
+    # couches, corrigée ici.
+    # "compte" accepté ici en plus de "j'ai"/"me reste" : couvre les tournures
+    # Darija normalisées du type "combien ... mon compte" ("ch7al f l7ssab
+    # dyali"). Sûr grâce à l'ordre : "combien ai-je dépensé sur mon compte ?"
+    # est déjà intercepté par `spending_by_category` bien plus haut.
+    if "combien" in normalized and (
+        "j'ai" in normalized or "me reste" in normalized or "compte" in normalized
+    ):
+        return {"intent": "total_balance"}
+
+    if "solde" in normalized or "argent" in normalized or _is_available_amount_request(normalized):
         return {"intent": "total_balance"}
 
     # Question personnelle reconnue (voir classification.classify_intent) mais
@@ -532,6 +677,28 @@ def build_personal_data_answer(
 
     normalized = _normalize(message)
     parsed = llm_router.to_personal_intent(llm_parsed) if llm_parsed else None
+
+    # Trou de repli corrigé : quand Mistral répond "unclear" (signal de FAIBLE
+    # CONFIANCE), `to_personal_intent` le traduit en `assistant_explain`. Or
+    # `graph.py` a déjà décidé, dans ce cas précis, de NE PAS faire confiance à
+    # Mistral pour le bucket et de retomber sur la classification déterministe
+    # (voir `_llm_router_node` : "unclear" ne fait jamais basculer le bucket).
+    # Laisser malgré tout `assistant_explain` gagner ici revenait à faire
+    # confiance à Mistral pour le choix de l'OUTIL alors qu'on venait de le
+    # rejeter pour le bucket — incohérence entre les deux couches, qui privait
+    # l'utilisateur d'une vraie réponse quand le repli déterministe, lui,
+    # savait répondre.
+    #
+    # Ne peut jamais dégrader le résultat : `assistant_explain` est déjà la
+    # réponse la plus faible du système, donc on ne remplace un
+    # `assistant_explain` que par une intention strictement plus précise — si
+    # le repli déterministe ne sait pas non plus, le comportement est
+    # identique à avant. `to_personal_intent` reste strictement inchangée.
+    if parsed is not None and parsed.get("intent") == "assistant_explain":
+        deterministic_parsed = classify_personal_intent(message)
+        if deterministic_parsed["intent"] != "assistant_explain":
+            parsed = deterministic_parsed
+
     if parsed is None:
         parsed = classify_personal_intent(message)
     intent = parsed["intent"]

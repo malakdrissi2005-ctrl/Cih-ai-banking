@@ -117,6 +117,41 @@ _ACCOUNT_ACTION_POSSESSIVE_PATTERNS = [
 # exemples de ce projet, qui utilisent "Quel est mon solde ?".
 _PROCEDURAL_FAQ_PREFIX = re.compile(r"^(comment|que faire)\b")
 
+# Questions DÉFINITIONNELLES ("qu'est-ce qu'une transaction bancaire ?",
+# "c'est quoi un découvert ?", "que signifie le solde comptable ?") : elles
+# portent sur un CONCEPT bancaire général, jamais sur les données réelles du
+# client — ce sont des questions de FAQ publique.
+#
+# Même rôle que `_PROCEDURAL_FAQ_PREFIX` ci-dessus, pour une autre famille de
+# tournures. Corrige un faux positif PRÉ-EXISTANT mesuré avant enrichissement :
+# "Qu'est-ce qu'une transaction bancaire ?" était classé `personal_data` à
+# cause de `\btransactions?\b` (`_PERSONAL_DATA_PATTERNS`), et exigeait donc
+# une connexion pour une simple question de vocabulaire.
+#
+# Volontairement restreint aux tournures suivies d'un ARTICLE INDÉFINI/DÉFINI
+# ("qu'est-ce qu'un/une", "c'est quoi un/une") : une question possessive
+# ("c'est quoi mon solde ?") n'est jamais interceptée et reste personnelle.
+_DEFINITIONAL_QUESTION_PATTERNS = [
+    re.compile(pattern)
+    for pattern in (
+        r"^qu'?est[- ]?ce qu'?une?\b",
+        r"^qu'?est[- ]?ce que l[ae']",
+        r"^c'?est quoi une?\b",
+        r"^c'?est quoi l[ae']",
+        r"\bque signifie\b",
+        r"\bqu'?entend[- ]on par\b",
+        r"\bdefinition d",
+        r"\ba quoi (sert|servent)\b",
+    )
+]
+
+
+def _is_definitional_question(normalized_text: str) -> bool:
+    """Détecte une question de définition/vocabulaire bancaire — voir
+    commentaire de `_DEFINITIONAL_QUESTION_PATTERNS`. Déterministe, aucun appel
+    LLM, utilisée uniquement par `classify_intent`."""
+    return any(pattern.search(normalized_text) for pattern in _DEFINITIONAL_QUESTION_PATTERNS)
+
 # Signalement d'incident d'accès/blocage de COMPTE (ex. "mon compte est
 # bloqué", "mon compte est verrouillé", "mon accès est bloqué", "je n'arrive
 # plus à accéder à mon compte", "mon compte ne marche plus") — même principe
@@ -296,6 +331,45 @@ _PERSONAL_DATA_PATTERNS = [
         r"\bconsacres?\b",
         r"\bme reste\b",
         r"\bmon argent\b",
+        # --- Formulations naturelles de synthèse personnelle (ajout ciblé) ---
+        # Mesuré avant ajout : ces trois tournures étaient les SEULES du lot
+        # étudié à tomber à tort dans `faq_generale` — "details de mon compte",
+        # "apercu de mon compte", "combien il me reste" et "point sur mes
+        # comptes" atteignaient déjà `personal_data` via `\bmon compte\b`/
+        # `\bmes comptes\b`/`\bme reste\b` ci-dessus, et n'ont donc demandé
+        # aucun pattern supplémentaire ici.
+        #
+        # Faux positifs vérifiés contre les 100 entrées réelles de
+        # `data/faq_docs/faq.json` avant ajout : 0 occurrence de
+        # "recapitulatif", 0 de "mes finances", 0 de "situation financiere".
+        # Volontairement NON ajoutés car trop génériques et à risque de faux
+        # positif sur une FAQ publique future : "resume", "bilan", "apercu" et
+        # "details" seuls — ces mots ne basculent en `personal_data` que
+        # lorsqu'ils accompagnent un possessif déjà couvert plus haut
+        # ("les details de mon compte" -> `\bmon compte\b`).
+        #
+        # `\bmes finances\b` (et non `\bfinances?\b`) : la frontière de mot
+        # empêche toute collision avec "financement", présent dans la FAQ
+        # publique réelle ("solutions de financement ou de crédit").
+        r"\brecapitulatif\b",
+        r"\brecaps?\b",
+        r"\bmes finances\b",
+        r"\bsituation financiere\b",
+        # --- Enrichissement : montant/somme disponible, mouvements, paiements
+        # Formulations naturelles mesurées comme tombant à tort dans
+        # `faq_generale` avant ajout. Toutes vérifiées : 0 occurrence dans les
+        # 100 entrées réelles de `data/faq_docs/faq.json`.
+        #
+        # Chaque pattern exige un ANCRAGE personnel (possessif "mon", tournure
+        # "ai-je", ou qualificatif "disponible"/"restant") — jamais le mot nu
+        # "montant", "somme", "avoir" ou "mouvement", qui apparaissent
+        # légitimement dans des questions publiques.
+        r"\bmon avoir\b",
+        r"\bmontant (disponible|restant)\b",
+        r"\bsomme\b[\w\s]{0,15}\bdisponible\b",
+        r"\bai-je encore\b",
+        r"\bmes\b[\w\s]{0,20}\bmouvements?\b",
+        r"\bpaiements?\b[\w\s]{0,15}\bai-je\b",
     )
 ]
 
@@ -364,8 +438,11 @@ def classify_intent(message: str) -> Intent:
     ):
         return "faq_generale"
 
-    is_procedural_faq_phrasing = bool(_PROCEDURAL_FAQ_PREFIX.match(normalized))
-    if not is_procedural_faq_phrasing and any(pattern.search(normalized) for pattern in _PERSONAL_DATA_PATTERNS):
+    # Deux familles de tournures PUBLIQUES par nature, évaluées avant tout
+    # pattern personnel : question de procédure ("comment...", "que faire...")
+    # et question de définition ("qu'est-ce qu'une transaction bancaire ?").
+    is_public_phrasing = bool(_PROCEDURAL_FAQ_PREFIX.match(normalized)) or _is_definitional_question(normalized)
+    if not is_public_phrasing and any(pattern.search(normalized) for pattern in _PERSONAL_DATA_PATTERNS):
         return "personal_data"
 
     return "faq_generale"

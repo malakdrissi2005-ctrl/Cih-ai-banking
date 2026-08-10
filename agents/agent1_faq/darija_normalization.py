@@ -58,6 +58,12 @@ _PHRASE_MAP: list[tuple[str, str]] = [
     # quand meme le bucket faq_generale (bucket par defaut), mais sans etre
     # traduit avant la recherche ChromaDB - qualite de recherche degradee. ---
     ("بغيت نحل حساب", "je veux ouvrir un compte"),
+    # --- Enrichissement : tournures dont la reconstruction mot-a-mot resterait
+    # ambigue ("بغيت ملخص ديال الحساب" -> "je veux resume de compte", sans
+    # possessif, donc non reconnu comme personnel). Traitees en phrase entiere,
+    # comme les autres cas irreguliers ci-dessus. ---
+    ("بغيت ملخص ديال الحساب", "quelles sont les informations de mon compte"),
+    ("بغيت ملخص ديال الحساب ديالي", "quelles sont les informations de mon compte"),
     # --- Carte : plafonds ---
     ("شحال هو سقف الأداء والسحب", "quel est le plafond de paiement et le plafond de retrait de ma carte"),
     ("سقف الأداء", "plafond de paiement"),
@@ -84,6 +90,46 @@ _PHRASE_MAP: list[tuple[str, str]] = [
     ("khsart carte dyali", "j'ai perdu ma carte"),
     ("wdart carte dyali", "j'ai perdu ma carte"),
     ("خسرت الكارط ديالي", "j'ai perdu ma carte"),
+    # --- Vue d'ensemble / synthèse du compte (Darija) ---
+    # Contrepartie Darija des formulations naturelles de synthèse désormais
+    # reconnues côté français (voir `classification._PERSONAL_DATA_PATTERNS`
+    # et `banking_answers._ACCOUNT_OVERVIEW_GROUPS`). Mesuré avant ajout :
+    # ces messages tombaient tous à tort dans `faq_generale`, alors que leur
+    # équivalent français atteignait `personal_data` -> `total_balance`.
+    #
+    # Chaque entrée pointe vers une phrase française EXACTE déjà vérifiée
+    # comme fonctionnelle, jamais vers une nouvelle branche de logique : c'est
+    # le même principe que les entrées "carte perdue" plus haut, et cela
+    # garantit par construction un résultat identique en français et en darija.
+    ("عطيني تفاصيل الحساب", "quelles sont les informations de mon compte"),
+    ("بغيت نشوف الحساب ديالي", "quelles sont les informations de mon compte"),
+    ("3tini tafasil dyal l7sab", "quelles sont les informations de mon compte"),
+    ("bghit tafasil dyal l7sab", "quelles sont les informations de mon compte"),
+    ("bghit nchouf l7sab dyali", "quelles sont les informations de mon compte"),
+    ("chouf l7sab dyali", "quelles sont les informations de mon compte"),
+    ("tafasil dyal l7sab", "quelles sont les informations de mon compte"),
+    ("tafasil dyal compte", "quelles sont les informations de mon compte"),
+    # --- "Combien me reste-t-il ?" (Darija) ---
+    # Distinct de "شحال عندي فالحساب" (solde brut) déjà présent plus haut :
+    # ces tournures portent explicitement sur le RESTE disponible.
+    ("شحال باقي عندي فالحساب", "combien il me reste"),
+    ("شحال باقي عندي", "combien il me reste"),
+    ("ch7al baqi 3ndi f compte", "combien il me reste"),
+    ("ch7al baqi 3ndi", "combien il me reste"),
+    ("chhal baqi 3ndi", "combien il me reste"),
+    ("ch7al baqi liya", "combien il me reste"),
+    # --- Situation financière (Darija) ---
+    ("الوضعية المالية ديالي", "quelle est ma situation financiere"),
+    ("wad3iya maliya dyali", "quelle est ma situation financiere"),
+    ("l wad3iya maliya dyali", "quelle est ma situation financiere"),
+    # --- Récapitulatif (Darija) ---
+    ("3tini recapitulatif dyal l7sab", "quelles sont les informations de mon compte"),
+    ("bghit recapitulatif", "je veux un recapitulatif"),
+    # --- Détails de la carte (Darija) — pointe vers la phrase française déjà
+    # vérifiée comme donnant `card_information`, jamais vers le compte. ---
+    ("تفاصيل الكارط ديالي", "quel est le statut de ma carte"),
+    ("tafasil dyal lkarta", "quel est le statut de ma carte"),
+    ("tafasil dyal carte dyali", "quel est le statut de ma carte"),
     # --- Actions indisponibles (virement / carte) ---
     ("حول ليا 500 درهم", "je veux virer 500 MAD"),
     ("bghit n7awel 500", "je veux virer 500 MAD"),
@@ -157,6 +203,78 @@ _WORD_MAP: list[tuple[str, str]] = [
     ("n7ell", "ouvrir"),
     ("واش", ""),
     ("wach", ""),
+    # -----------------------------------------------------------------------
+    # Enrichissement de la couverture Darija / Arabizi / arabe.
+    #
+    # Stratégie retenue pour éviter l'explosion combinatoire : privilégier le
+    # _WORD_MAP (qui GÉNÉRALISE à toute phrase contenant le token) plutôt que
+    # d'ajouter une entrée _PHRASE_MAP par formulation. Chaque token pointe
+    # vers la forme française EXACTE déjà reconnue par le classificateur —
+    # possessif inclus quand il est nécessaire ("العمليات" -> "mes operations"
+    # et non "operations", car `_PERSONAL_DATA_PATTERNS` exige le possessif
+    # pour ce mot, qui apparaît aussi dans des questions publiques).
+    #
+    # Rappel de fonctionnement : `_WORD_MAP` est trié par longueur
+    # DÉCROISSANTE et appliqué par `str.replace` (sous-chaîne, pas frontière de
+    # mot) — les entrées composées ci-dessous sont donc toujours traitées avant
+    # leurs fragments ("bghit n3ref" avant "bghit" et "n3ref", "nchof" avant
+    # "chof", "الحساب ديالي" avant "الحساب" et "ديالي").
+    # -----------------------------------------------------------------------
+    # --- Possessifs composés : produisent "mon compte"/"ma carte" (et non
+    # "compte mon"), seule forme reconnue par `_PERSONAL_DATA_PATTERNS`. ---
+    ("l7sab dyali", "mon compte"),
+    ("lhsab dyali", "mon compte"),
+    ("l7ssab dyali", "mon compte"),
+    ("7sab dyali", "mon compte"),
+    ("compte dyali", "mon compte"),
+    ("carte dyali", "ma carte"),
+    ("الحساب ديالي", "mon compte"),
+    ("الكارط ديالي", "ma carte"),
+    # --- "les X dyali" = "mes X" (tournure Darija très courante). ---
+    ("les dernieres operations", "mes dernieres operations"),
+    ("les operations dyali", "mes operations"),
+    ("les transactions dyali", "mes transactions"),
+    ("les paiements dyali", "mes paiements"),
+    ("les depenses dyali", "mes depenses"),
+    ("les beneficiaires dyali", "mes beneficiaires"),
+    ("finances dyali", "mes finances"),
+    # --- "combien me reste-t-il" ---
+    ("baqi liya", "me reste"),
+    ("baqi lia", "me reste"),
+    ("باقي ليا", "me reste"),
+    # --- Verbes / tournures d'intention ---
+    ("bghit n3ref", "je veux savoir"),
+    ("بغيت نعرف", "je veux savoir"),
+    ("nchouf", "voir"),
+    ("nchof", "voir"),
+    ("chof", "montre-moi"),
+    ("n3ref", "savoir"),
+    ("نشوف", "voir"),
+    ("نعرف", "savoir"),
+    ("عطيني", "donne-moi"),
+    ("بغيت", "je veux"),
+    ("ديال", "de"),
+    # --- Variantes orthographiques Arabizi fréquentes de "combien" / "compte" ---
+    ("ch7el", "combien"),
+    ("chhal", "combien"),
+    ("cha7al", "combien"),
+    ("l7ssab", "compte"),
+    # --- Noms d'opérations / de produits ---
+    ("l3amaliyat", "mes operations"),
+    ("3amaliyat", "mes operations"),
+    ("العمليات", "mes operations"),
+    ("المعاملات", "mes transactions"),
+    ("المصاريف", "mes depenses"),
+    ("الراتب", "mon salaire"),
+    ("اقتطاع", "prelevement"),
+    ("الوضعية المالية", "situation financiere"),
+    ("ملخص", "resume"),
+    ("tafasil", "details"),
+    ("تفاصيل", "details"),
+    ("l7ala", "etat"),
+    ("الحالة", "etat"),
+    ("akhir", "dernier"),
+    ("آخر", "dernier"),
 ]
 _WORD_MAP.sort(key=lambda item: -len(item[0]))
 

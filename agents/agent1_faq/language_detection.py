@@ -58,6 +58,32 @@ _DARIJA_LATN_MARKERS = [
     "lhsab",
     "ma3lomat",
     "m3lomat",
+    # --- Enrichissement de la couverture Darija/Arabizi : marqueurs des
+    # nouvelles formulations prises en charge par `darija_normalization.py`.
+    # Sans marqueur ici, le message est détecté comme "fr", donc JAMAIS
+    # normalisé — écart mesuré sur "chhal baqi liya", qui restait en
+    # `faq_generale` alors que sa normalisation était pourtant correcte.
+    # Comme les entrées ci-dessus, tous ces tokens sont choisis parce qu'ils
+    # n'existent pas en français standard : aucun risque de faux positif sur
+    # un message réellement français.
+    "chhal",
+    "ch7el",
+    "cha7al",
+    "liya",
+    "baqi",
+    "n3ref",
+    "nchof",
+    "nchouf",
+    "chof",
+    "tafasil",
+    "l7sab",
+    "l7ssab",
+    "l7ala",
+    "l3amaliyat",
+    "3amaliyat",
+    "akhir",
+    "khsart",
+    "wdart",
 ]
 _DARIJA_LATN_PATTERN = re.compile(r"\b(" + "|".join(_DARIJA_LATN_MARKERS) + r")\b", re.IGNORECASE)
 

@@ -115,6 +115,95 @@ def test_llm_unclear_intent_falls_back_to_deterministic_classification(monkeypat
     assert result["intent"] == "faq_generale"
 
 
+# ---------------------------------------------------------------------------
+# 2bis. COUVERTURE DU FALLBACK : les formulations naturelles de synthèse
+#       doivent fonctionner dans les TROIS états de défaillance de Mistral —
+#       désactivé, indisponible, ou retournant "unclear". C'est précisément
+#       l'objet de l'amélioration du repli déterministe : sans ces tests, rien
+#       ne prouve que le gain est réel là où il est censé servir.
+# ---------------------------------------------------------------------------
+
+# Formulations couvertes par les nouveaux patterns/synonymes déterministes.
+_FALLBACK_OVERVIEW_PHRASES = [
+    "Donne-moi les détails de mon compte",
+    "Aperçu de mon compte",
+    "Combien il me reste ?",
+    "Résumé de mes finances",
+    "Quelle est ma situation financière ?",
+    "Je veux un récapitulatif",
+    # --- Couverture élargie (français) ---
+    "Je veux consulter mon compte",
+    "Montre-moi mon compte",
+    "Quel montant ai-je encore ?",
+    "Quelle somme est disponible ?",
+    "Quel est mon avoir disponible ?",
+    # --- Couverture élargie (Arabizi et arabe) : le repli déterministe doit
+    # fonctionner dans les trois états de Mistral en darija aussi. ---
+    "ch7al baqi lia",
+    "bghit nchof l7sab dyali",
+    "بغيت نعرف شحال باقي ليا",
+    "بغيت ملخص ديال الحساب",
+]
+
+# 45730.50 = 15230.50 (courant) + 30500.00 (carnet) pour usr_001.
+_EXPECTED_TOTAL_USR_001 = "45730.50"
+
+
+@pytest.mark.parametrize("message", _FALLBACK_OVERVIEW_PHRASES)
+def test_overview_phrases_work_when_mistral_is_disabled(monkeypatch, banking_path, message):
+    """État 1 — Mistral DÉSACTIVÉ (`use_llm_router=False`) : `route_with_llm`
+    ne doit même pas être appelé, et la réponse doit contenir le solde réel."""
+
+    def _fail(*args, **kwargs):
+        raise AssertionError("route_with_llm ne doit jamais etre appele quand use_llm_router=False")
+
+    monkeypatch.setattr(llm_router, "route_with_llm", _fail)
+    result = run_agent1(
+        message, is_authenticated=True, user_id="usr_001", banking_db_path=banking_path, use_llm_router=False
+    )
+    assert result["intent"] == "personal_data"
+    assert _EXPECTED_TOTAL_USR_001 in result["response"]
+
+
+@pytest.mark.parametrize("message", _FALLBACK_OVERVIEW_PHRASES)
+def test_overview_phrases_work_when_mistral_is_unavailable(monkeypatch, banking_path, message):
+    """État 2 — Mistral INDISPONIBLE : `route_with_llm` retourne `None` (c'est
+    son contrat sur tout échec : service injoignable, timeout, JSON invalide,
+    champ suspect). Le repli déterministe doit prendre le relais sans que
+    l'utilisateur voie la moindre erreur technique."""
+    monkeypatch.setattr(llm_router, "route_with_llm", lambda *a, **k: None)
+    result = run_agent1(
+        message, is_authenticated=True, user_id="usr_001", banking_db_path=banking_path, use_llm_router=True
+    )
+    assert result["intent"] == "personal_data"
+    assert _EXPECTED_TOTAL_USR_001 in result["response"]
+
+
+@pytest.mark.parametrize("message", _FALLBACK_OVERVIEW_PHRASES)
+def test_overview_phrases_work_when_mistral_returns_unclear(monkeypatch, banking_path, message):
+    """État 3 — Mistral retourne "unclear" (faible confiance) : ce signal ne
+    doit jamais faire basculer le bucket à lui seul, le repli déterministe
+    tranche — et doit désormais reconnaître ces formulations."""
+    monkeypatch.setattr(llm_router, "route_with_llm", lambda *a, **k: {"intent": "unclear"})
+    result = run_agent1(
+        message, is_authenticated=True, user_id="usr_001", banking_db_path=banking_path, use_llm_router=True
+    )
+    assert result["intent"] == "personal_data"
+    assert _EXPECTED_TOTAL_USR_001 in result["response"]
+
+
+@pytest.mark.parametrize("message", _FALLBACK_OVERVIEW_PHRASES)
+def test_overview_phrases_still_require_authentication_in_fallback(monkeypatch, banking_path, message):
+    """Sécurité, dans les trois états ci-dessus : élargir le repli déterministe
+    ne doit JAMAIS permettre à un utilisateur non authentifié d'obtenir une
+    donnée bancaire réelle. L'authentification reste décidée par la session
+    seule, jamais par la sortie de Mistral."""
+    monkeypatch.setattr(llm_router, "route_with_llm", lambda *a, **k: None)
+    result = run_agent1(message, is_authenticated=False, banking_db_path=banking_path, use_llm_router=True)
+    assert result["requires_auth"] is True
+    assert _EXPECTED_TOTAL_USR_001 not in result["response"]
+
+
 def test_use_llm_router_false_never_calls_mistral(monkeypatch, banking_path):
     def _fail(*args, **kwargs):
         raise AssertionError("route_with_llm ne doit jamais etre appele quand use_llm_router=False")

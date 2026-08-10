@@ -506,3 +506,285 @@ def test_french_public_faq_still_works(collection):
     result = run_agent1("Quels documents pour ouvrir un compte ?", collection=collection)
     assert result["intent"] == "faq_generale"
     assert "CIN" in result["response"]
+
+
+# ---------------------------------------------------------------------------
+# Vue d'ensemble / synthèse du compte en Darija (arabe et Arabizi)
+#
+# Contrepartie Darija des formulations naturelles de synthèse ajoutées côté
+# français. Tous ces tests passent par le VRAI pipeline `run_agent1` avec
+# `use_llm_router=False` (valeur par défaut) : ils exercent donc exactement le
+# chemin DÉTERMINISTE utilisé quand Mistral est indisponible, désactivé ou
+# retourne "unclear" — jamais le chemin LLM.
+#
+# Mesuré avant ajout : ces messages tombaient tous dans `faq_generale`, alors
+# que leur équivalent français atteignait déjà `personal_data`.
+# Voir `darija_normalization._PHRASE_MAP`.
+# ---------------------------------------------------------------------------
+
+# 45730.50 = 15230.50 (courant) + 30500.00 (carnet) pour usr_001.
+_EXPECTED_TOTAL_USR_001 = "45730.50"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # "Combien me reste-t-il ?"
+        "ch7al baqi 3ndi",
+        "chhal baqi 3ndi",
+        "ch7al baqi 3ndi f compte",
+        "شحال باقي عندي",
+        # "Détails / aperçu de mon compte"
+        "3tini tafasil dyal l7sab",
+        "bghit tafasil dyal l7sab",
+        "bghit nchouf l7sab dyali",
+        "عطيني تفاصيل الحساب",
+        "بغيت نشوف الحساب ديالي",
+        # "Situation financière"
+        "wad3iya maliya dyali",
+        "الوضعية المالية ديالي",
+        # "Récapitulatif"
+        "bghit recapitulatif",
+        "3tini recapitulatif dyal l7sab",
+    ],
+)
+def test_darija_account_overview_returns_real_balance(collection, banking_path, message):
+    """Chaque formulation Darija de synthèse doit produire le solde réel —
+    jamais une réponse FAQ publique, jamais le message générique
+    d'`assistant_explain`."""
+    result = run_agent1(
+        message,
+        is_authenticated=True,
+        user_id="usr_001",
+        collection=collection,
+        banking_db_path=banking_path,
+        use_llm_router=False,
+    )
+    assert result["intent"] == "personal_data"
+    assert result["requires_auth"] is False
+    assert _EXPECTED_TOTAL_USR_001 in result["response"]
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_active_marker"),
+    [
+        # La réponse est localisée dans l'écriture du message d'origine
+        # (`response_localizer.localize_card_answer`) : "khdama" en Arabizi,
+        # "خدامة" en arabe — la carte de usr_001 est active.
+        ("tafasil dyal lkarta", "khdama"),
+        ("تفاصيل الكارط ديالي", "خدامة"),
+    ],
+)
+def test_darija_card_details_stay_card_information(collection, banking_path, message, expected_active_marker):
+    """Test d'ORDRE en Darija : "détails de ma carte" doit rester une question
+    de CARTE et ne jamais être capturé par la règle générique de compte —
+    même garantie qu'en français. L'assertion négative sur le solde est le
+    point central de ce test."""
+    result = run_agent1(
+        message,
+        is_authenticated=True,
+        user_id="usr_001",
+        collection=collection,
+        banking_db_path=banking_path,
+        use_llm_router=False,
+    )
+    assert result["intent"] == "personal_data"
+    assert expected_active_marker in result["response"].lower()
+    assert _EXPECTED_TOTAL_USR_001 not in result["response"]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "ch7al baqi 3ndi",
+        "3tini tafasil dyal l7sab",
+        "الوضعية المالية ديالي",
+    ],
+)
+def test_darija_account_overview_requires_authentication(collection, banking_path, message):
+    """Sécurité : une demande de synthèse Darija chez un utilisateur NON
+    authentifié doit exiger une connexion et ne jamais laisser fuiter une
+    donnée bancaire réelle."""
+    result = run_agent1(
+        message,
+        is_authenticated=False,
+        collection=collection,
+        banking_db_path=banking_path,
+        use_llm_router=False,
+    )
+    assert result["requires_auth"] is True
+    assert _EXPECTED_TOTAL_USR_001 not in result["response"]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Questions FAQ publiques en Darija déjà supportées : les nouvelles
+        # entrées de synthèse ne doivent pas les transformer en questions
+        # personnelles.
+        "bghit n7ell compte",
+        "khsart carte dyali",
+    ],
+)
+def test_darija_public_questions_not_captured_by_new_overview_rules(collection, message):
+    """Non-régression faux positifs en Darija : une question publique reste
+    publique malgré les nouvelles entrées de normalisation."""
+    result = run_agent1(message, collection=collection, use_llm_router=False)
+    assert result["intent"] == "faq_generale"
+    assert result["requires_auth"] is False
+
+
+# ---------------------------------------------------------------------------
+# COUVERTURE ÉLARGIE — une intention à la fois, en Arabizi ET en arabe.
+#
+# Tous ces tests passent par le vrai pipeline `run_agent1` avec
+# `use_llm_router=False` : ils exercent donc exclusivement le chemin
+# DÉTERMINISTE (Mistral désactivé). La correction attendue est vérifiée sur
+# l'intention résolue par `classify_personal_intent` après normalisation —
+# la RÉPONSE, elle, est localisée en darija et son texte varie selon la
+# langue, on ne l'utilise donc pas comme critère (sauf pour le solde, dont le
+# montant n'est jamais traduit).
+#
+# Mesuré avant enrichissement : 17/33 Arabizi et 10/21 arabe corrects ;
+# après : 33/33 et 21/21.
+# ---------------------------------------------------------------------------
+
+
+def _resolved_intent(message):
+    """Intention fine obtenue par le chemin déterministe complet
+    (détection de langue -> normalisation -> sous-classification)."""
+    from agents.agent1_faq.banking_answers import classify_personal_intent
+    from agents.agent1_faq.darija_normalization import normalize_darija_message
+    from agents.agent1_faq.language_detection import detect_language
+
+    normalized = normalize_darija_message(message) if detect_language(message) != "fr" else message
+    return classify_personal_intent(normalized)["intent"]
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_intent"),
+    [
+        # --- 1. Solde / argent disponible (Arabizi + variantes ortho.) ---
+        ("ch7al baqi lia", "total_balance"),
+        ("ch7al baqi liya f l7sab", "total_balance"),
+        ("ch7el baqi lia", "total_balance"),
+        ("chhal baqi liya", "total_balance"),
+        ("ch7al 3ndi f l7sab dyali", "total_balance"),
+        ("ch7al f l7ssab dyali", "total_balance"),
+        ("bghit n3ref ch7al baqi lia", "total_balance"),
+        # --- 1bis. Solde (arabe) ---
+        ("شحال باقي ليا؟", "total_balance"),
+        ("شحال باقي ليا فالحساب؟", "total_balance"),
+        ("بغيت نعرف شحال باقي ليا", "total_balance"),
+        # --- 2. Détails / aperçu / état du compte ---
+        ("bghit nchof l7sab dyali", "total_balance"),
+        ("bghit nchouf compte dyali", "total_balance"),
+        ("chof lia compte dyali", "total_balance"),
+        ("bghit n3ref l7ala dyal compte dyali", "total_balance"),
+        ("بغيت نعرف الحالة ديال الحساب ديالي", "total_balance"),
+        # --- 3. Transactions / opérations / historique ---
+        ("3tini les dernieres operations", "recent_transactions"),
+        ("bghit nchof les operations dyali", "recent_transactions"),
+        ("chof lia les transactions dyali", "recent_transactions"),
+        ("akhir l3amaliyat dyali", "recent_transactions"),
+        ("عطيني العمليات الأخيرة", "recent_transactions"),
+        ("بغيت نشوف المعاملات ديالي", "recent_transactions"),
+        # --- 4. Dépenses ---
+        ("bghit n3ref les depenses dyali", "spending_by_category"),
+        ("ch7al sraft had chher", "spending_by_category"),
+        ("المصاريف ديالي", "spending_by_category"),
+        # --- 5-6. Carte / état de la carte ---
+        ("l7ala dyal carte dyali", "card_information"),
+        ("wach carte dyali khdama", "card_information"),
+        ("الحالة ديال الكارط ديالي", "card_information"),
+        # --- 7. Bénéficiaires ---
+        ("bghit nchof les beneficiaires dyali", "beneficiaries"),
+        ("شكون هوما البنيفيسيار ديالي", "beneficiaries"),
+        # --- 8. Prélèvements ---
+        ("akhir prelevement dyali", "last_direct_debit"),
+        ("آخر اقتطاع ديالي", "last_direct_debit"),
+        # --- 9. Paiements ---
+        ("les paiements dyali", "payments"),
+        # --- 10. Salaire ---
+        ("wach dkhal lia salaire", "salary"),
+        ("الراتب ديالي", "salary"),
+        # --- 11-12. Situation financière / récapitulatif ---
+        ("bghit resume dyal finances dyali", "total_balance"),
+        ("bghit n3ref situation financiere dyali", "total_balance"),
+        ("بغيت نعرف الوضعية المالية ديالي", "total_balance"),
+        ("بغيت ملخص ديال الحساب", "total_balance"),
+    ],
+)
+def test_darija_enriched_coverage_resolves_expected_intent(message, expected_intent):
+    """Couverture élargie Darija/Arabizi/arabe : chaque formulation doit
+    atteindre son intention précise via le seul chemin déterministe."""
+    assert _resolved_intent(message) == expected_intent
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "ch7al baqi lia",
+        "بغيت نعرف شحال باقي ليا",
+        "bghit nchof l7sab dyali",
+        "بغيت ملخص ديال الحساب",
+    ],
+)
+def test_darija_enriched_coverage_end_to_end_returns_real_balance(collection, banking_path, message):
+    """Bout en bout sur le pipeline réel, Mistral désactivé : le solde réel
+    doit apparaître dans la réponse (montants jamais traduits)."""
+    result = run_agent1(
+        message,
+        is_authenticated=True,
+        user_id="usr_001",
+        collection=collection,
+        banking_db_path=banking_path,
+        use_llm_router=False,
+    )
+    assert result["intent"] == "personal_data"
+    assert result["requires_auth"] is False
+    assert _EXPECTED_TOTAL_USR_001 in result["response"]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "ch7al baqi lia",
+        "بغيت نعرف شحال باقي ليا",
+        "bghit nchof l7sab dyali",
+        "المصاريف ديالي",
+        "الراتب ديالي",
+    ],
+)
+def test_darija_enriched_coverage_still_requires_authentication(collection, banking_path, message):
+    """Sécurité : l'élargissement de la couverture Darija ne doit jamais
+    permettre à un utilisateur non authentifié d'obtenir une donnée réelle."""
+    result = run_agent1(
+        message,
+        is_authenticated=False,
+        collection=collection,
+        banking_db_path=banking_path,
+        use_llm_router=False,
+    )
+    assert result["requires_auth"] is True
+    assert _EXPECTED_TOTAL_USR_001 not in result["response"]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Les nouveaux marqueurs de langue ne doivent pas faire basculer un
+        # message purement français vers la normalisation Darija.
+        "Quel est mon solde ?",
+        "Comment ouvrir un compte ?",
+        "Quels types de cartes bancaires existent ?",
+        "Combien ai-je dépensé dans les restaurants ce mois-ci ?",
+    ],
+)
+def test_new_darija_markers_never_hijack_french_messages(message):
+    """Non-régression : aucun des marqueurs Arabizi ajoutés à
+    `language_detection.py` n'existe en français standard — un message
+    français doit rester détecté "fr" et ne jamais être normalisé."""
+    from agents.agent1_faq.language_detection import detect_language
+
+    assert detect_language(message) == "fr"
