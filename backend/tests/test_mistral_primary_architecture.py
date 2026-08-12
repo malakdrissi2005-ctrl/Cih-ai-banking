@@ -204,10 +204,42 @@ def test_explicit_personal_card_info_request_requires_auth(monkeypatch, banking_
     )
     assert result_authenticated["intent"] == "card_query"
     assert result_authenticated["requires_auth"] is False
-    # Le statut de la carte vient exclusivement de banking.db, jamais invente par Mistral.
+
+
+def test_card_information_request_returns_real_status_from_database(monkeypatch, banking_path):
+    """Une demande d'INFORMATION sur la carte renvoie bien la donnee reelle,
+    lue en base et jamais inventee par Mistral."""
+    _mock_llm_response(monkeypatch, "card_query", card_fields=["status"])
+    result = run_agent1(
+        "donne-moi les informations de ma carte",
+        is_authenticated=True, user_id="usr_001", banking_db_path=banking_path, use_llm_router=True,
+    )
     real_card = banking_db.get_card_for_customer("usr_001", db_path=banking_path)
     assert real_card["status"] == "active"
-    assert "active" in result_authenticated["response"].lower()
+    assert "active" in result["response"].lower()
+
+
+def test_card_number_request_is_refused_even_when_mistral_says_card_query(monkeypatch, banking_path):
+    """CHANGEMENT DE CONTRAT ASSUME (protection numero de carte).
+
+    "quel est le numero de ma carte" ne renvoie plus le statut de la carte :
+    le numero complet ne doit jamais transiter par le chatbot. La demande
+    exige toujours une authentification (assertion conservee ci-dessus), mais
+    la reponse est desormais un refus explicite avec redirection securisee -
+    y compris lorsque Mistral, lui, classe la demande en `card_query`
+    (`CLAUDE.md` §5 : aucune securite ne repose sur le LLM).
+
+    Voir `backend/tests/test_card_number_protection.py` pour la couverture
+    complete de cette protection."""
+    from agents.agent1_faq.banking_answers import CARD_NUMBER_REDIRECT_MESSAGE
+
+    _mock_llm_response(monkeypatch, "card_query", card_fields=["status"])
+    result = run_agent1(
+        "quel est le numero de ma carte",
+        is_authenticated=True, user_id="usr_001", banking_db_path=banking_path, use_llm_router=True,
+    )
+    assert result["response"] == CARD_NUMBER_REDIRECT_MESSAGE
+    assert "active" not in result["response"].lower()
 
 
 def test_ch7al_3ndi_fl_compte_is_understood_as_balance_query(monkeypatch, banking_path):

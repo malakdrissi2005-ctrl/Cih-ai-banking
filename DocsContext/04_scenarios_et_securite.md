@@ -307,6 +307,195 @@ Pour ce MVP, aucun fournisseur SMS/email réel n'est intégré. L'envoi et la va
 
 ---
 
+## 4bis\. Scénario — demande d'identifiant bancaire personnel (RIB / IBAN)
+
+### Le défaut corrigé
+
+Trois formulations équivalentes recevaient trois réponses différentes :
+
+| Message | Réponse obtenue (incorrecte) |
+| :---- | :---- |
+| `je veux voir mon rib` | FAQ « réinitialisation de mot de passe » |
+| `je veux connaitre mon rib` | Solde total tous comptes |
+| `Quel est mon RIB ?` | Définition publique d'un RIB |
+
+**Cause racine unique** : Mistral est le classificateur principal, et aucune règle
+déterministe ne pouvait le contredire. Le classificateur déterministe traitait
+pourtant correctement les trois phrases. Conséquence contre-intuitive : une
+phrase correctement écrite pouvait être moins bien comprise qu'une phrase
+fautive, cette dernière tombant dans le repli déterministe.
+
+### Le modèle compositionnel
+
+`agents/agent1_faq/personal_entities.py` reconnaît une demande personnelle par
+la COMBINAISON de quatre familles de marqueurs réutilisables et multilingues —
+jamais par des phrases codées en dur :
+
+1. **entité bancaire** — rib, iban, numéro de compte, numéro de carte, solde, opérations, bénéficiaires ;
+2. **marqueur de possession** — `mon`, `ma`, `mes`, `dyali`, `dyalti`, `ديالي`… ;
+3. **verbe / forme interrogative** — voir, montrer, donner, connaître, consulter, quel est, `bghit`, `3tini`… ;
+4. **marqueur de définition** — `qu'est-ce que`, `définition`, `à quoi sert`…
+
+Règles, dans l'ordre :
+
+- entité + possession → demande **personnelle** ; la possession l'emporte
+  toujours sur un marqueur de définition (« c'est quoi mon rib » est personnel) ;
+- marqueur de définition sans possession → **FAQ publique** ;
+- un verbe de demande **ne suffit pas** sans possession : « Comment consulter la
+  transaction ? » reste une question de procédure ;
+- le **numéro de carte** est la seule entité traitée sans possession — demander
+  un PAN n'est jamais une question de documentation.
+
+### Le veto, et pourquoi ce n'est pas un classificateur concurrent
+
+Le nœud `personal_entity_guard` s'exécute juste après le Security Guard, avant
+tout appel Mistral. Il n'impose pas d'étiquette d'intention : il retire à la FAQ
+le droit de gagner. Mistral conserve donc la main sur le vocabulaire
+(`balance_query`, `card_query`…) et le champ `intent` de `POST /api/chat` est
+inchangé partout où il était déjà correct.
+
+Deux entités au signal textuel EXACT — `rib`/`iban` et le numéro de carte —
+l'emportent en plus sur une intention personnelle *erronée* : c'était le bug
+n°2, Mistral répondant `balance_query` sur « je veux connaitre mon rib ». Pour
+celles-ci, la sortie de Mistral est également ignorée pour le choix de l'outil.
+
+### Ordre de priorité des intentions
+
+1. Security Guard (virement / action de compte) ;
+2. sous-intentions personnelles précises ;
+3. repli personnel générique (entité + possession, sous-intention non résolue) ;
+4. messages conversationnels ;
+5. FAQ publique / RAG — **dernier recours**.
+
+### Comportement attendu
+
+| Situation | Réponse |
+| :---- | :---- |
+| Authentifié, `mon RIB` sous toute variante FR / darija / arabizi | RIB **et** IBAN complets de chaque compte, issus de la base |
+| Non authentifié, même message | Demande de connexion, **aucun identifiant** |
+| `Qu'est-ce qu'un RIB ?` (sans possessif) | FAQ publique, aucune donnée personnelle |
+| Entité + possession sans sous-intention précise | Réponse par défaut de l'entité, sinon question de clarification ciblée — **jamais** la FAQ/RAG |
+
+### Données exposées
+
+- **Autorisé au propriétaire authentifié** : RIB, IBAN, numéro de compte client.
+- **Toujours interdit** : `id_compte` et toute clé technique interne, PAN complet,
+  CVV, PIN, mot de passe, empreinte bcrypt, jeton de session.
+
+### Refus du numéro de carte
+
+Message renvoyé (français), volontairement exempt des quatre affirmations
+inexactes de la rédaction précédente — pas de « connectez-vous » à un
+utilisateur déjà authentifié, pas de renvoi en agence, aucune promesse de
+« derniers chiffres » jamais renvoyés, aucune allégation qu'un écran afficherait
+le numéro complet :
+
+> Pour protéger vos données, le numéro complet de votre carte ne peut pas être
+> affiché dans le chatbot. Vous pouvez consulter les informations autorisées de
+> votre carte depuis l'onglet sécurisé « Cartes ». Je peux également vous
+> indiquer son statut, sa date d'expiration et ses plafonds.
+
+Même sens et mêmes limites en darija arabe et en arabizi
+(`response_localizer.localize_card_number_redirect`). Non authentifié : réponse
+d'authentification requise, sans aucune information de carte.
+
+### Couverture de test
+
+`backend/tests/test_rib_routing_http.py` — 96 tests via `POST /api/chat`. La
+collection ChromaDB y est instrumentée (`CollecteurFaq`) pour **prouver** qu'une
+demande personnelle précise n'atteint jamais le RAG, avec une contre-preuve
+vérifiant que le collecteur détecte bien les appels réels.
+
+---
+
+## 4ter\. Scénario — RIB ciblé et plafonds de carte
+
+### 4ter.1 RIB : un seul compte à la fois
+
+**Défaut corrigé.** La réponse listait les trois comptes du client avec RIB,
+IBAN et numéro de compte, suivis d'un paragraphe de sécurité. Elle répondait à
+des questions non posées et noyait la seule valeur utile.
+
+**Règle par défaut.** Sans précision, seul le RIB du **compte courant** est
+renvoyé :
+
+> Le RIB de votre compte courant est : 230810000110001100011006.
+
+Sont volontairement absents : les comptes carnet, l'IBAN, le numéro de compte,
+le solde et toute mention de sécurité. L'IBAN et le numéro de compte restent
+accessibles — par leur propre question (« Donne-moi mon IBAN »).
+
+**Sélection explicite.** Un type de compte cité restreint la recherche. Si
+plusieurs comptes de ce type existent, l'assistant demande lequel, en
+s'appuyant sur les **références masquées** :
+
+> Vous avez plusieurs comptes carnet : •••• 2009 et •••• 3012. Lequel souhaitez-vous consulter ?
+
+Les derniers chiffres cités par l'utilisateur tranchent ensuite. Aucun compte
+correspondant : « Aucun compte correspondant n'a été trouvé. »
+
+**Une seule sélection, trois langues.** `banking_answers.select_account_for_identifiers`
+est indépendante de la langue ; le français et la darija l'appellent tous deux
+et ne diffèrent que par la mise en phrase. Une même demande désigne donc
+toujours le même compte.
+
+### 4ter.2 Plafonds de carte : la précision avant le générique
+
+**Défaut corrigé.** « Quels sont les plafonds de ma carte ? » répondait
+« Votre carte est active. »
+
+**Cause racine — conflit de priorité.** Mistral ne distingue pas les facettes
+d'une carte : `llm_router.to_personal_intent` traduit son `card_query` en
+`requested_fields = ["status"]`. Cette sortie primant sur la détection
+déterministe, le défaut générique écrasait une détection qui avait pourtant
+parfaitement reconnu les deux plafonds. Deux trous de vocabulaire s'y
+ajoutaient : « limites » et surtout la tournure de **capacité** (« combien
+puis-je payer / retirer »), seule formulation employée en darija.
+
+**Correction.** La sortie de Mistral n'est remplacée que lorsqu'elle vaut
+exactement le défaut `["status"]` **et** que la détection déterministe est
+strictement plus précise. Quand les deux s'accordent sur le statut, rien ne
+change — une question de statut renvoie toujours le statut.
+
+**Réponses attendues** (montants issus de `CARTE_BANCAIRE`, en `Decimal`) :
+
+| Question | Réponse |
+| :---- | :---- |
+| Les deux plafonds | `Votre plafond de paiement est de X MAD et votre plafond de retrait est de Y MAD.` |
+| Paiement seul | `Votre plafond de paiement est de X MAD.` |
+| Retrait seul | `Votre plafond de retrait est de Y MAD.` |
+| Statut | `Votre carte est active.` |
+
+**Lexiques réutilisables** (`personal_entities.CARD_LIMIT_PATTERN`,
+`CARD_PAYMENT_PATTERN`, `CARD_WITHDRAWAL_PATTERN`) : source unique, partagée
+par la reconnaissance d'entité et par le choix des champs renvoyés, pour
+qu'elles ne puissent jamais diverger. La tournure de capacité exige
+« combien » **et** un verbe d'opération : sans « combien », « Puis-je retirer à
+l'étranger ? » demande une autorisation et reste une question de FAQ.
+
+### 4ter.3 Plusieurs cartes
+
+`banking_db.get_cards_for_customer` renvoie toutes les cartes ;
+`get_card_for_customer` (avec son `LIMIT 1`) ne sert plus à répondre. Au-delà
+d'une carte, l'assistant demande laquelle avec des références **masquées**
+(« •••• 7007 ») et ne divulgue aucun plafond avant que le choix soit fait.
+
+### 4ter.4 Authentification et données exposées
+
+Avant connexion, toute demande de RIB ou de plafond exige une authentification
+et ne révèle **aucune** valeur. Les définitions publiques (« Qu'est-ce qu'un
+RIB ? ») restent des questions de FAQ. Restent interdits en toutes
+circonstances : PAN complet, CVV, PIN, `id_compte` et toute clé technique.
+
+### 4ter.5 Couverture de test
+
+`backend/tests/test_rib_and_card_limits_http.py` — 84 tests via
+`POST /api/chat`, chaque RIB et chaque plafond comparé à une requête SQL
+indépendante, en français, darija arabe et arabizi, avec Mistral coupé puis
+avec un Mistral renvoyant `card_query`.
+
+---
+
 ## 5\. Piste d'audit & journalisation DevSecOps
 
 ### 5.1 Principes

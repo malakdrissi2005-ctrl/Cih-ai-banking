@@ -212,9 +212,14 @@ def test_use_llm_router_false_never_calls_mistral(monkeypatch, banking_path):
     result = run_agent1(
         "combien jai", is_authenticated=True, user_id="usr_001", banking_db_path=banking_path, use_llm_router=False
     )
-    # Repli deterministe : "combien jai" (sans apostrophe, aucun mot-cle
-    # reconnu par classification.py) -> faq_generale, comportement inchange.
-    assert result["intent"] == "faq_generale"
+    # AMÉLIORATION ASSUMÉE (auparavant : faq_generale).
+    # "combien jai" (sans apostrophe) n'est reconnu par aucun motif de
+    # classification.py et repartait vers la FAQ. Le garde compositionnel
+    # (`personal_entities`) y voit désormais une quantité rapportée à une
+    # possession — « combien » + « jai » — donc une question de solde, et
+    # oppose son veto au routage FAQ. Mistral n'est toujours pas appelé :
+    # c'est bien la voie déterministe qui tranche, ce que ce test vérifie.
+    assert result["intent"] == "personal_data"
 
 
 # ---------------------------------------------------------------------------

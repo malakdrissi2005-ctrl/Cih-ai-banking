@@ -22,6 +22,16 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Optional
 
+# Refus du numero de carte complet — SOURCE UNIQUE du texte francais, reutilisee
+# telle quelle par `banking_answers.CARD_NUMBER_REDIRECT_MESSAGE` (pas de copie
+# divergente possible entre les deux modules).
+CARD_NUMBER_REDIRECT_FR = (
+    "Pour protéger vos données, le numéro complet de votre carte ne peut pas être "
+    "affiché dans le chatbot. Vous pouvez consulter les informations autorisées de "
+    "votre carte depuis l’onglet sécurisé « Cartes ». Je peux également vous indiquer "
+    "son statut, sa date d’expiration et ses plafonds."
+)
+
 GENERIC_PERSONAL_FALLBACK_FR = (
     "Je ne peux pas encore répondre précisément à cette question personnelle. "
     "Essayez par exemple : solde total, dépenses par catégorie, dernières opérations, "
@@ -119,6 +129,115 @@ def localize_unclear_short(language: str) -> str:
     if language == "darija_latn":
         return "Ma fhamtch mezyan. Twaddi t3awd seg soualek?"
     return "Je n'ai pas bien compris votre demande. Pouvez-vous préciser votre question ?"
+
+
+_TYPE_COMPTE_AR = {"courant": "الحساب الجاري", "carnet": "حساب التوفير"}
+_TYPE_COMPTE_LATN = {"courant": "compte courant", "carnet": "compte carnet"}
+
+
+_LIBELLE_IDENTIFIANT_AR = {"rib": "الريب", "iban": "الإيبان", "account_number": "رقم"}
+_LIBELLE_IDENTIFIANT_LATN = {"rib": "R RIB", "iban": "L IBAN", "account_number": "Numero"}
+
+
+def localize_rib_selection(
+    genre: str, charge, language: str, derniers_chiffres, field: str = "rib"
+) -> str:
+    """Met en phrase le RÉSULTAT de la sélection de compte, sans le recalculer.
+
+    La sélection elle-même est faite une seule fois, en amont, par
+    `banking_answers.select_account_for_identifiers` : ce module ne fait que
+    traduire. Une même demande désigne donc toujours le même compte, en
+    français comme en darija.
+
+    Réponse volontairement CONCISE : uniquement le RIB du compte retenu — ni
+    IBAN, ni numéro de compte, ni solde, ni paragraphe de sécurité.
+    """
+    if genre == "aucun_compte":
+        if language == "darija_ar":
+            return "ما كاين حتى حساب مسجل."
+        return "Ma kayn 7ta 7isab mousajjal."
+
+    if genre == "introuvable":
+        if language == "darija_ar":
+            return "ما لقيتش حتى حساب مطابق."
+        return "Ma l9itch 7ta 7isab mouta6abi9."
+
+    if genre == "ambigu":
+        references = " و " if language == "darija_ar" else " w "
+        liste = references.join(derniers_chiffres(c["masked_account_number"]) for c in charge)
+        if language == "darija_ar":
+            libelle = _TYPE_COMPTE_AR.get(charge[0]["account_type"], charge[0]["account_type"])
+            return f"عندك بزاف ديال {libelle}: {liste}. أشمن واحد بغيتي ؟"
+        libelle = _TYPE_COMPTE_LATN.get(charge[0]["account_type"], charge[0]["account_type"])
+        return f"3andek bezzaf dyal {libelle} : {liste}. Achmen wa7ed bghiti ?"
+
+    if language == "darija_ar":
+        libelle = _TYPE_COMPTE_AR.get(charge["account_type"], charge["account_type"])
+        return f"{_LIBELLE_IDENTIFIANT_AR[field]} ديال {libelle} هو : {charge[field]}."
+    libelle = _TYPE_COMPTE_LATN.get(charge["account_type"], charge["account_type"])
+    return f"{_LIBELLE_IDENTIFIANT_LATN[field]} dyal {libelle} howa : {charge[field]}."
+
+
+def localize_card_number_redirect(language: str) -> str:
+    """Refus du numéro de carte complet, dans la langue du message.
+
+    Même sens exact dans les trois langues, et surtout mêmes limites : on ne
+    promet ni les derniers chiffres, ni une agence, ni un écran qui afficherait
+    le numéro complet — aucun de ces trois éléments n'existe. Seuls l'onglet
+    « Cartes » et les trois informations réellement disponibles (statut,
+    expiration, plafonds) sont mentionnés.
+    """
+    if language == "darija_ar":
+        return (
+            "باش نحميو المعلومات ديالك، الرقم الكامل ديال البطاقة ما يمكنش يتعرض "
+            "فالشات. تقدر تشوف المعلومات المسموح بها ديال البطاقة من التبويب الآمن "
+            "« البطاقات ». ونقدر نقول ليك أيضاً الحالة ديالها، تاريخ الانتهاء والسقوف."
+        )
+    if language == "darija_latn":
+        return (
+            "Bach nhemiw l ma3loumat dyalek, ra9m kamel dyal l carte ma ymkench "
+            "yt3ared f chat. Tqder tchouf l ma3loumat lmasmou7 biha dyal l carte men "
+            "l onglet l amin « Cartes ». W nqder ngoul lik 7ta l 7ala dyalha, tarikh "
+            "l intiha2 w sou9ouf."
+        )
+    return CARD_NUMBER_REDIRECT_FR
+
+
+# Clarifications ciblées en darija — même rôle que
+# `banking_answers._TARGETED_CLARIFICATIONS` : quand une demande est reconnue
+# comme personnelle (entité + possession) mais qu'aucune sous-intention précise
+# n'est résolue, on repose une question sur l'entité mentionnée plutôt que de
+# renvoyer l'utilisateur vers la FAQ.
+_TARGETED_CLARIFICATION_AR = {
+    "account_identifiers": "كتسول على المعلومات البنكية ديالك. واش بغيتي الـRIB، الـIBAN، ولا رقم حساب معين ؟",
+    "balance": "كتسول على الرصيد ديالك. واش بغيتي المجموع ديال جميع الحسابات، ولا رصيد حساب معين ؟",
+    "transactions": "كتسول على العمليات ديالك. واش بغيتي آخر العمليات، ولا ديال مدة معينة ؟",
+    "card_information": "كتسول على البطاقة ديالك. واش بغيتي الحالة ديالها، تاريخ الانتهاء ولا السقوف ؟",
+    "beneficiaries": "كتسول على المستفيدين ديالك. واش بغيتي اللائحة ديال اللي مسجلين ؟",
+}
+
+_TARGETED_CLARIFICATION_LATN = {
+    "account_identifiers": "Katsewel 3la l ma3loumat l bankia dyalek. Wach bghiti r RIB, l IBAN, wla ra9m 7isab mo3ayan ?",
+    "balance": "Katsewel 3la solde dyalek. Wach bghiti l majmou3 dyal jami3 l 7issabat, wla solde 7isab mo3ayan ?",
+    "transactions": "Katsewel 3la l 3amaliyat dyalek. Wach bghiti akher l 3amaliyat, wla dyal mouda mo3ayana ?",
+    "card_information": "Katsewel 3la l carte dyalek. Wach bghiti l 7ala dyalha, tarikh l intiha2 wla sou9ouf ?",
+    "beneficiaries": "Katsewel 3la l mostafidin dyalek. Wach bghiti la7i7a dyal li mousajjlin ?",
+}
+
+
+def localize_targeted_clarification(entity: Optional[str], language: str) -> Optional[str]:
+    """Clarification ciblée en darija, ou `None` si aucune entité reconnue.
+
+    `None` laisse l'appelant retomber sur son repli habituel : cette fonction
+    ne doit jamais transformer une absence de reconnaissance en phrase creuse.
+    """
+    if entity is None:
+        return None
+    if language == "darija_ar":
+        return _TARGETED_CLARIFICATION_AR.get(entity)
+    if language == "darija_latn":
+        return _TARGETED_CLARIFICATION_LATN.get(entity)
+    return None
 
 
 def localize_generic_fallback(language: str) -> str:
@@ -272,6 +391,42 @@ def localize_beneficiaries_answer(data: dict, language: str) -> str:
         return f"هاذو البنيفيسيار المسجلين ديالك: {lines}."
     lines = "; ".join(f"{b['display_name']} ({b['masked_account_number']})" for b in beneficiaries)
     return f"Hadou les beneficiaires dyalek : {lines}."
+
+
+def localize_account_identifiers_answer(data: dict, language: str) -> str:
+    """RIB / IBAN / numéro de compte, localisés — toujours MASQUÉS.
+
+    Les valeurs arrivent déjà masquées de la couche d'accès aux données
+    (`banking_db.get_account_identifiers_for_customer`) : cette fonction ne
+    fait que mettre en phrase, elle ne peut pas exposer une valeur complète.
+    """
+    accounts = data["accounts"]
+
+    if not accounts:
+        if language == "darija_ar":
+            return "ما عندكش حساب مسجل."
+        return "Ma 3andekch compte msajjel."
+
+    if language == "darija_ar":
+        lignes = "، ".join(
+            f"{a['account_type']} — {a['masked_account_number']}، RIB {a['rib']}، IBAN {a['iban']}"
+            for a in accounts
+        )
+        return (
+            f"هاذي المعلومات ديال الحسابات ديالك: {lignes}. "
+            "لأسباب ديال الأمان، كنوريك غير الأرقام الأخيرة. "
+            "الريب الكامل تقدر تجبدو من الفضاء الآمن ديالك."
+        )
+
+    lignes = " ; ".join(
+        f"{a['account_type']} — {a['masked_account_number']}, RIB {a['rib']}, IBAN {a['iban']}"
+        for a in accounts
+    )
+    return (
+        f"Hadi les informations dyal les comptes dyalek : {lignes}. "
+        "Bach n7afdou 3la l'aman, kanwarik ghir les chiffres li fl'akhir. "
+        "RIB kaml tqder tjbdo mn l'espace client secure dyalek."
+    )
 
 
 def localize_assistant_explain(data: dict, language: str) -> str:

@@ -1,6 +1,21 @@
-"""Tests de la base bancaire fictive enrichie `banking.db` (backend/app/banking/banking_db.py).
+"""Tests du schéma bancaire métier (backend/app/banking/banking_db.py).
 
-Base isolée par test (tmp_path) — jamais le vrai `backend/data/banking.db` du projet.
+Base isolée par test (tmp_path) — jamais le vrai `backend/data/demo_bancaire.db`
+du projet.
+
+Ce fichier est le SEUL à interroger le schéma PHYSIQUE en SQL brut (noms de
+tables et de colonnes). Tous les autres tests passent par les fonctions
+publiques de `banking_db`, dont les clés de retour sont inchangées — c'est ce
+qui a permis de renommer les tables sans toucher une seule de leurs
+assertions.
+
+Schéma cible : `CLIENT`, `UTILISATEUR_E_BANKING`, `COMPTE_BANCAIRE`,
+`CARTE_BANCAIRE`, `TRANSACTION`, `BENEFICIAIRE`, plus `account_balance_history`
+conservée (elle alimente `get_balance_at_date`, hors spécification cible mais
+indispensable à une fonctionnalité existante et testée).
+
+`TRANSACTION` étant un mot réservé SQL, la table est toujours citée entre
+guillemets doubles.
 """
 import sqlite3
 from decimal import Decimal
@@ -31,25 +46,82 @@ def test_seed_creates_expected_tables(db_path):
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
 
     assert {
-        "customers",
-        "accounts",
+        "CLIENT",
+        "UTILISATEUR_E_BANKING",
+        "COMPTE_BANCAIRE",
         "account_balance_history",
-        "transactions",
-        "beneficiaries",
-        "cards",
+        "TRANSACTION",
+        "BENEFICIAIRE",
+        "CARTE_BANCAIRE",
     }.issubset(tables)
+
+
+def test_legacy_tables_are_never_created_by_the_new_schema(db_path):
+    """Non-régression de migration : l'ancien schéma ne doit plus apparaître.
+
+    Sa conversion est le rôle explicite de `scripts/migrate_banking_database.py`,
+    jamais un effet de bord de `init_db`."""
+    banking_db.seed_banking_data(db_path=db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+
+    assert not {"customers", "accounts", "transactions", "cards", "beneficiaries"} & tables
 
 
 def test_each_user_has_a_courant_and_a_carnet_account(db_path):
     banking_db.seed_banking_data(db_path=db_path)
 
     with sqlite3.connect(db_path) as conn:
-        rows = conn.execute("SELECT customer_id, account_type FROM accounts").fetchall()
+        rows = conn.execute("SELECT id_client, type_compte FROM COMPTE_BANCAIRE").fetchall()
 
     assert len(rows) == 10  # 2 comptes x 5 utilisateurs
     for customer_id in EXPECTED_USER_IDS:
-        types = {account_type for cid, account_type in rows if cid == customer_id}
+        types = {type_compte for cid, type_compte in rows if cid == customer_id}
         assert types == {"courant", "carnet"}
+
+
+def test_every_account_has_a_rib_and_an_iban(db_path):
+    """Nouveaux champs du schéma réaliste — déterministes, jamais aléatoires."""
+    banking_db.seed_banking_data(db_path=db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute("SELECT rib, iban, numero_compte FROM COMPTE_BANCAIRE").fetchall()
+
+    assert len(rows) == 10
+    for rib, iban, numero_compte in rows:
+        assert len(rib) == 24 and rib.isdigit()
+        assert iban.startswith("MA") and len(iban) == 28
+        assert len(numero_compte) == 16
+
+
+def test_rib_generation_is_deterministic(db_path):
+    """Deux ré-exécutions du seed doivent produire exactement les mêmes RIB."""
+    banking_db.seed_banking_data(db_path=db_path)
+    with sqlite3.connect(db_path) as conn:
+        first = dict(conn.execute("SELECT id_compte, rib FROM COMPTE_BANCAIRE").fetchall())
+
+    banking_db.seed_banking_data(db_path=db_path)
+    with sqlite3.connect(db_path) as conn:
+        second = dict(conn.execute("SELECT id_compte, rib FROM COMPTE_BANCAIRE").fetchall())
+
+    assert first == second
+
+
+def test_client_table_holds_identity_fields(db_path):
+    banking_db.seed_banking_data(db_path=db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT nom, prenom, telephone_mobile, email, statut_client "
+            "FROM CLIENT WHERE id_client = 'usr_001'"
+        ).fetchone()
+
+    assert row is not None
+    nom, prenom, telephone, email, statut = row
+    assert prenom and nom
+    assert telephone and email
+    assert statut == "actif"
 
 
 def test_total_balance_across_accounts(db_path):
@@ -57,7 +129,7 @@ def test_total_balance_across_accounts(db_path):
 
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT balance FROM accounts WHERE customer_id = 'usr_001'"
+            "SELECT solde_disponible FROM COMPTE_BANCAIRE WHERE id_client = 'usr_001'"
         ).fetchall()
 
     total = sum(Decimal(balance) for (balance,) in rows)
@@ -71,11 +143,11 @@ def test_transactions_by_category_and_period(db_path):
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT amount FROM transactions
-            JOIN accounts ON accounts.account_id = transactions.account_id
-            WHERE accounts.customer_id = 'usr_001'
-              AND transactions.category = 'Restaurants'
-              AND substr(transactions.transaction_date, 1, 7) = ?
+            SELECT montant FROM "TRANSACTION"
+            JOIN COMPTE_BANCAIRE ON COMPTE_BANCAIRE.id_compte = "TRANSACTION".id_compte
+            WHERE COMPTE_BANCAIRE.id_client = 'usr_001'
+              AND "TRANSACTION".categorie = 'Restaurants'
+              AND substr("TRANSACTION".date_operation, 1, 7) = ?
             """,
             (banking_db.DEMO_CURRENT_MONTH,),
         ).fetchall()
@@ -92,11 +164,11 @@ def test_payments_from_last_month_are_retrievable(db_path):
         for customer_id in EXPECTED_USER_IDS:
             rows = conn.execute(
                 """
-                SELECT transactions.transaction_id FROM transactions
-                JOIN accounts ON accounts.account_id = transactions.account_id
-                WHERE accounts.customer_id = ?
-                  AND transactions.transaction_type = 'card_payment'
-                  AND substr(transactions.transaction_date, 1, 7) = ?
+                SELECT "TRANSACTION".id_transaction FROM "TRANSACTION"
+                JOIN COMPTE_BANCAIRE ON COMPTE_BANCAIRE.id_compte = "TRANSACTION".id_compte
+                WHERE COMPTE_BANCAIRE.id_client = ?
+                  AND "TRANSACTION".type_operation = 'card_payment'
+                  AND substr("TRANSACTION".date_operation, 1, 7) = ?
                 """,
                 (customer_id, banking_db.DEMO_LAST_MONTH),
             ).fetchall()
@@ -109,8 +181,8 @@ def test_balance_at_a_past_date_is_retrievable(db_path):
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
             """
-            SELECT balance FROM account_balance_history
-            WHERE account_id = 'acc_001_courant' AND as_of_date = '2026-01-01'
+            SELECT solde FROM account_balance_history
+            WHERE id_compte = 'acc_001_courant' AND as_of_date = '2026-01-01'
             """
         ).fetchone()
 
@@ -125,18 +197,18 @@ def test_incoming_transfer_received_this_week(db_path):
         for customer_id in EXPECTED_USER_IDS:
             rows = conn.execute(
                 """
-                SELECT transactions.transaction_date, transactions.related_account_id
-                FROM transactions
-                JOIN accounts ON accounts.account_id = transactions.account_id
-                WHERE accounts.customer_id = ?
-                  AND transactions.transaction_type = 'incoming_transfer'
+                SELECT "TRANSACTION".date_operation, "TRANSACTION".id_compte_lie
+                FROM "TRANSACTION"
+                JOIN COMPTE_BANCAIRE ON COMPTE_BANCAIRE.id_compte = "TRANSACTION".id_compte
+                WHERE COMPTE_BANCAIRE.id_client = ?
+                  AND "TRANSACTION".type_operation = 'incoming_transfer'
                 """,
                 (customer_id,),
             ).fetchall()
             assert len(rows) == 1
-            transaction_date, related_account_id = rows[0]
-            assert transaction_date >= banking_db.DEMO_THIS_WEEK_START
-            assert related_account_id is not None and related_account_id.endswith("_carnet")
+            date_operation, id_compte_lie = rows[0]
+            assert date_operation >= banking_db.DEMO_THIS_WEEK_START
+            assert id_compte_lie is not None and id_compte_lie.endswith("_carnet")
 
 
 def test_salary_credit_date_is_retrievable(db_path):
@@ -145,15 +217,15 @@ def test_salary_credit_date_is_retrievable(db_path):
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
             """
-            SELECT transaction_date, amount FROM transactions
-            WHERE transaction_id = 'tx_001_salary'
+            SELECT date_operation, montant FROM "TRANSACTION"
+            WHERE id_transaction = 'tx_001_salary'
             """
         ).fetchone()
 
     assert row is not None
-    transaction_date, amount = row
-    assert transaction_date == "2026-07-25"
-    assert Decimal(amount) == Decimal("12000.00")
+    date_operation, montant = row
+    assert date_operation == "2026-07-25"
+    assert Decimal(montant) == Decimal("12000.00")
 
 
 def test_last_direct_debit_is_unambiguous(db_path):
@@ -163,21 +235,21 @@ def test_last_direct_debit_is_unambiguous(db_path):
         for customer_id in EXPECTED_USER_IDS:
             row = conn.execute(
                 """
-                SELECT transactions.transaction_date, transactions.description
-                FROM transactions
-                JOIN accounts ON accounts.account_id = transactions.account_id
-                WHERE accounts.customer_id = ?
-                  AND transactions.transaction_type = 'direct_debit'
-                  AND accounts.account_type = 'courant'
-                ORDER BY transactions.transaction_date DESC
+                SELECT "TRANSACTION".date_operation, "TRANSACTION".libelle
+                FROM "TRANSACTION"
+                JOIN COMPTE_BANCAIRE ON COMPTE_BANCAIRE.id_compte = "TRANSACTION".id_compte
+                WHERE COMPTE_BANCAIRE.id_client = ?
+                  AND "TRANSACTION".type_operation = 'direct_debit'
+                  AND COMPTE_BANCAIRE.type_compte = 'courant'
+                ORDER BY "TRANSACTION".date_operation DESC
                 LIMIT 1
                 """,
                 (customer_id,),
             ).fetchone()
             assert row is not None
-            transaction_date, description = row
-            assert transaction_date == "2026-07-20"
-            assert "abonnement" in description.lower()
+            date_operation, libelle = row
+            assert date_operation == "2026-07-20"
+            assert "abonnement" in libelle.lower()
 
 
 def test_card_settings_per_user(db_path):
@@ -186,9 +258,11 @@ def test_card_settings_per_user(db_path):
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT accounts.customer_id, cards.international_payments_enabled, cards.payment_limit
-            FROM cards
-            JOIN accounts ON accounts.account_id = cards.account_id
+            SELECT COMPTE_BANCAIRE.id_client,
+                   CARTE_BANCAIRE.paiement_international_actif,
+                   CARTE_BANCAIRE.plafond_paiement
+            FROM CARTE_BANCAIRE
+            JOIN COMPTE_BANCAIRE ON COMPTE_BANCAIRE.id_compte = CARTE_BANCAIRE.id_compte
             """
         ).fetchall()
 
@@ -203,12 +277,27 @@ def test_card_limits_are_present_for_every_user(db_path):
     banking_db.seed_banking_data(db_path=db_path)
 
     with sqlite3.connect(db_path) as conn:
-        rows = conn.execute("SELECT payment_limit, withdrawal_limit FROM cards").fetchall()
+        rows = conn.execute("SELECT plafond_paiement, plafond_retrait FROM CARTE_BANCAIRE").fetchall()
 
     assert len(rows) == 5
-    for payment_limit, withdrawal_limit in rows:
-        assert Decimal(payment_limit) > 0
-        assert Decimal(withdrawal_limit) > 0
+    for plafond_paiement, plafond_retrait in rows:
+        assert Decimal(plafond_paiement) > 0
+        assert Decimal(plafond_retrait) > 0
+
+
+def test_card_number_is_stored_masked_only(db_path):
+    """Sécurité : la base ne doit jamais contenir de numéro de carte en clair."""
+    banking_db.seed_banking_data(db_path=db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute("SELECT numero_carte_masque FROM CARTE_BANCAIRE").fetchall()
+
+    assert len(rows) == 5
+    for (numero,) in rows:
+        digits = "".join(char for char in numero if char.isdigit())
+        # Un PAN complet fait 16 chiffres : le stockage masqué doit en exposer
+        # strictement moins.
+        assert len(digits) < 16
 
 
 def test_reseeding_does_not_create_duplicates(db_path):
@@ -225,12 +314,12 @@ def test_reseeding_does_not_create_duplicates(db_path):
     assert stats["changes"]["transactions"]["inserted"] == 0
 
     with sqlite3.connect(db_path) as conn:
-        assert conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 10
-        assert conn.execute("SELECT COUNT(DISTINCT account_id) FROM accounts").fetchone()[0] == 10
-        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 75
-        assert conn.execute("SELECT COUNT(DISTINCT transaction_id) FROM transactions").fetchone()[0] == 75
+        assert conn.execute("SELECT COUNT(*) FROM COMPTE_BANCAIRE").fetchone()[0] == 10
+        assert conn.execute("SELECT COUNT(DISTINCT id_compte) FROM COMPTE_BANCAIRE").fetchone()[0] == 10
+        assert conn.execute('SELECT COUNT(*) FROM "TRANSACTION"').fetchone()[0] == 75
+        assert conn.execute('SELECT COUNT(DISTINCT id_transaction) FROM "TRANSACTION"').fetchone()[0] == 75
         assert conn.execute("SELECT COUNT(*) FROM account_balance_history").fetchone()[0] == 30
-        assert conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0] == 5
+        assert conn.execute("SELECT COUNT(*) FROM CARTE_BANCAIRE").fetchone()[0] == 5
 
 
 def test_amounts_are_stored_as_exact_decimal_strings_not_float(db_path):
@@ -238,17 +327,18 @@ def test_amounts_are_stored_as_exact_decimal_strings_not_float(db_path):
 
     with sqlite3.connect(db_path) as conn:
         balance_row = conn.execute(
-            "SELECT balance, typeof(balance) FROM accounts WHERE account_id = 'acc_001_courant'"
+            "SELECT solde_disponible, typeof(solde_disponible) FROM COMPTE_BANCAIRE "
+            "WHERE id_compte = 'acc_001_courant'"
         ).fetchone()
         history_row = conn.execute(
-            "SELECT balance, typeof(balance) FROM account_balance_history "
-            "WHERE account_id = 'acc_001_courant' AND as_of_date = '2026-01-01'"
+            "SELECT solde, typeof(solde) FROM account_balance_history "
+            "WHERE id_compte = 'acc_001_courant' AND as_of_date = '2026-01-01'"
         ).fetchone()
         tx_row = conn.execute(
-            "SELECT amount, typeof(amount) FROM transactions WHERE transaction_id = 'tx_001_salary'"
+            'SELECT montant, typeof(montant) FROM "TRANSACTION" WHERE id_transaction = \'tx_001_salary\''
         ).fetchone()
         card_row = conn.execute(
-            "SELECT payment_limit, typeof(payment_limit) FROM cards WHERE card_id = 'card_001'"
+            "SELECT plafond_paiement, typeof(plafond_paiement) FROM CARTE_BANCAIRE WHERE id_carte = 'card_001'"
         ).fetchone()
 
     for value, sqlite_type in (balance_row, history_row, tx_row, card_row):
@@ -261,7 +351,7 @@ def test_amounts_are_stored_as_exact_decimal_strings_not_float(db_path):
 
 
 def test_auth_db_and_public_chat_still_work(tmp_path):
-    """Vérifie que banking.db n'interfère ni avec auth.db ni avec l'Agent 1 public."""
+    """Vérifie que la base bancaire n'interfère ni avec auth.db ni avec l'Agent 1 public."""
     import json
 
     from app.security import session_manager

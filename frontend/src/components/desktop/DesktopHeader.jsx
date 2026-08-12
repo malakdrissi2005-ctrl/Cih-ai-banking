@@ -9,9 +9,13 @@ export default function DesktopHeader() {
   return (
     <div className="flex items-center justify-between gap-4 px-6 py-5 sm:px-8">
       <div>
-        <p className="text-lg font-bold text-gray-900">
-          Bonjour <span className="text-cih-orange">{userName}</span> !
-        </p>
+        {/* Salutation affichee uniquement quand le nom reel est connu : pas de nom
+            de demonstration en attendant GET /api/banking/overview. */}
+        {userName && (
+          <p className="text-lg font-bold text-gray-900">
+            Bonjour <span className="text-cih-orange">{userName}</span> !
+          </p>
+        )}
         <p className="text-xs text-gray-400">Voici un aperçu de votre compte aujourd’hui.</p>
       </div>
 

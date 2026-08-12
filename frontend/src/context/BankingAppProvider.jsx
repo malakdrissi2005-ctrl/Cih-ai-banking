@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { mockUser, mockAccount } from '../data/mockAccount.js'
 import { mockTransactions } from '../data/mockTransactions.js'
 import { publicSuggestions, authenticatedSuggestions } from '../data/chatSuggestions.js'
@@ -13,7 +13,12 @@ import {
   OTP_MAX_ATTEMPTS,
   INITIALIZATION_DISPLAY_DURATION_MS,
 } from '../data/chatSimulation.js'
-import { loginRequest, checkSessionRequest, logoutRequest } from '../data/authApi.js'
+import {
+  loginRequest,
+  checkSessionRequest,
+  logoutRequest,
+  fetchBankingOverview,
+} from '../data/authApi.js'
 
 // Cle de stockage du session_id opaque (Backend, voir CLAUDE.md §4) - conserve uniquement
 // pour la session de navigation courante (sessionStorage), jamais un JWT, jamais persiste
@@ -36,6 +41,21 @@ export function BankingAppProvider({ children }) {
   // --- Compte & solde (partages) ---
   const [balanceVisible, setBalanceVisible] = useState(false)
 
+  // --- Donnees bancaires REELLES du client authentifie (GET /api/banking/overview)
+  // Source unique du tableau de bord ET du chatbot : avant cette integration, le
+  // tableau de bord affichait mockAccount (15 420,50 MAD) pendant que le chatbot
+  // lisait demo_bancaire.db (106 318,39 MAD). Les deux se contredisaient a l'ecran.
+  const [overview, setOverview] = useState(null)
+  const [overviewStatus, setOverviewStatus] = useState('idle') // idle|loading|ready|error
+  const [overviewError, setOverviewError] = useState(null) // 'unauthorized'|'network'|'invalid'
+  const [selectedAccountIndex, setSelectedAccountIndex] = useState(0)
+
+  // Jeton de course : chaque chargement recoit un numero. Une reponse dont le
+  // numero n'est plus le courant est ignoree. Empeche qu'une requete lente,
+  // partie avant une deconnexion ou une autre connexion, ne vienne peupler
+  // l'etat avec les donnees du client precedent.
+  const overviewRequestRef = useRef(0)
+
   // --- Assistant IA : un seul etat de conversation pour les deux boutons d'acces ---
   const [chatOpen, setChatOpen] = useState(false)
   const [chatHasUnread, setChatHasUnread] = useState(false)
@@ -53,6 +73,62 @@ export function BankingAppProvider({ children }) {
 
   // Au demarrage : si un session_id existe encore (onglet rouvert/rafraichi), verifie sa
   // validite aupres du Backend avant de considerer l'utilisateur comme authentifie.
+  /** Efface TOUTE donnee bancaire personnelle de l'etat partage.
+   *
+   * Appelee a la deconnexion et avant chaque nouveau chargement : garantit
+   * qu'un utilisateur ne peut jamais voir, meme brievement, les donnees du
+   * precedent. Incremente aussi le jeton de course, ce qui neutralise toute
+   * requete encore en vol.
+   */
+  // `useCallback` sans dependance : ces deux fonctions ne referencent que des
+  // setters d'etat et une ref, tous stables. Elles peuvent donc figurer sans
+  // risque dans le tableau de dependances de l'effet de restauration ci-dessous,
+  // qui ne doit s'executer qu'une seule fois, au montage.
+  const clearOverview = useCallback(() => {
+    overviewRequestRef.current += 1
+    setOverview(null)
+    setOverviewStatus('idle')
+    setOverviewError(null)
+    setSelectedAccountIndex(0)
+  }, [])
+
+  const loadOverview = useCallback(async function loadOverview(sessionId) {
+    clearOverview()
+    const requestId = overviewRequestRef.current
+    setOverviewStatus('loading')
+
+    const result = await fetchBankingOverview(sessionId)
+
+    // Reponse obsolete (deconnexion ou autre connexion entre-temps) : ignoree.
+    if (requestId !== overviewRequestRef.current) return
+
+    if (result.ok) {
+      setOverview(result.overview)
+      setOverviewStatus('ready')
+      setOverviewError(null)
+      return
+    }
+
+    // Jamais de repli silencieux sur des donnees simulees : on affiche l'erreur.
+    setOverview(null)
+    setOverviewStatus('error')
+    setOverviewError(result.reason)
+
+    // Session expiree ou invalide : on repasse l'application en etat deconnecte
+    // plutot que de laisser un tableau de bord authentifie sans donnees.
+    if (result.reason === 'unauthorized') {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY)
+      setIsAuthenticated(false)
+    }
+  }, [clearOverview])
+
+  /** Reessaie le chargement avec la session courante (bouton « Reessayer »). */
+  async function retryOverview() {
+    const storedSessionId = sessionStorage.getItem(SESSION_STORAGE_KEY)
+    if (!storedSessionId) return
+    await loadOverview(storedSessionId)
+  }
+
   useEffect(() => {
     const storedSessionId = sessionStorage.getItem(SESSION_STORAGE_KEY)
     if (!storedSessionId) return
@@ -60,11 +136,14 @@ export function BankingAppProvider({ children }) {
     checkSessionRequest(storedSessionId).then((result) => {
       if (result.ok) {
         setIsAuthenticated(true)
+        // Session restauree (onglet rouvert) : les donnees bancaires doivent
+        // etre rechargees, elles ne survivent volontairement pas au rafraichissement.
+        loadOverview(storedSessionId)
       } else {
         sessionStorage.removeItem(SESSION_STORAGE_KEY)
       }
     })
-  }, [])
+  }, [loadOverview])
 
   async function login(username, password) {
     const result = await loginRequest(username, password)
@@ -73,17 +152,23 @@ export function BankingAppProvider({ children }) {
     }
     sessionStorage.setItem(SESSION_STORAGE_KEY, result.sessionId)
     setIsAuthenticated(true)
+    await loadOverview(result.sessionId)
     return { ok: true }
   }
 
   async function logout() {
     const storedSessionId = sessionStorage.getItem(SESSION_STORAGE_KEY)
+    // Neutralise immediatement toute requete en vol AVANT l'appel reseau.
+    clearOverview()
     if (storedSessionId) {
       await logoutRequest(storedSessionId)
     }
     sessionStorage.removeItem(SESSION_STORAGE_KEY)
     setIsAuthenticated(false)
     setBalanceVisible(false)
+    // La conversation contient des donnees personnelles (soldes, operations).
+    setMessages([])
+    setActiveAgent('assistant')
   }
 
   function toggleBalanceVisible() {
@@ -217,19 +302,71 @@ export function BankingAppProvider({ children }) {
     }))
   }
 
+  // --- Derivation du compte selectionne et des transactions affichees -------
+  // Une seule source : `overview`. Les donnees simulees ne servent plus QUE
+  // avant authentification (ecran public/decoratif) — jamais en repli d'une
+  // requete echouee, ce qui reintroduirait la contradiction d'affichage.
+  const accounts = overview?.accounts ?? []
+  const selectedAccount = accounts[selectedAccountIndex] ?? accounts[0] ?? null
+
+  // Le compte affiche par la carte principale, au format attendu par les
+  // composants existants (`AccountCard`, `MobileDashboard`, `DesktopDashboard`).
+  const account = isAuthenticated && selectedAccount
+    ? {
+        type: selectedAccount.accountType,
+        // Reference CLIENT masquee, jamais la cle technique `id_compte`.
+        number: selectedAccount.maskedAccountNumber,
+        balance: selectedAccount.balance,
+        currency: selectedAccount.currency,
+      }
+    : mockAccount
+
+  // Le contrat de `RecentTransactions` (voir son en-tete) : `amount` est une
+  // chaine decimale NON SIGNEE, le sens est porte exclusivement par `direction`,
+  // avec les valeurs 'in' / 'out'. Le backend, lui, parle 'credit' / 'debit' :
+  // la traduction se fait ici, une seule fois. Signer le montant ici afficherait
+  // un double signe ("--1305.00"), le composant ajoutant deja le sien.
+  const transactions = isAuthenticated && overview
+    ? overview.recentTransactions.map((tx, index) => ({
+        id: `${tx.date}-${index}`,
+        label: tx.label,
+        category: tx.category,
+        date: tx.date,
+        amount: tx.amount,
+        direction: tx.direction === 'credit' ? 'in' : 'out',
+        currency: tx.currency,
+      }))
+    : mockTransactions
+
   const value = {
     // auth & session
     isAuthenticated,
-    userName: mockUser.display_name,
+    // Une fois authentifie, le nom vient de la base — jamais de `mockUser`.
+    // Tant que l'overview n'est pas arrive, la salutation reste vide plutot que
+    // d'afficher le nom d'un client de demonstration a un vrai utilisateur.
+    userName: isAuthenticated ? overview?.fullName ?? '' : mockUser.display_name,
     highlightLogin,
     login,
     logout,
-    // compte
-    account: mockAccount,
+    // compte (selectionne)
+    account,
     balanceVisible,
     onToggleBalance: toggleBalanceVisible,
+    // --- Donnees bancaires reelles (source unique, partagee mobile/desktop) ---
+    overview,
+    overviewStatus,
+    overviewError,
+    retryOverview,
+    accounts,
+    selectedAccount,
+    selectedAccountIndex,
+    selectAccount: setSelectedAccountIndex,
+    // Total TOUS COMPTES — distinct du solde du compte selectionne ci-dessus,
+    // et identique a celui annonce par le chatbot.
+    totalBalance: overview?.totalBalance ?? null,
+    card: overview?.card ?? null,
     // transactions
-    transactions: mockTransactions,
+    transactions,
     // assistant / chat
     chatOpen,
     chatHasUnread,

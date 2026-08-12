@@ -19,7 +19,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -31,7 +33,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from agents.agent1_faq.rag import get_faq_collection  # noqa: E402
+from agents.agent1_faq import rag  # noqa: E402
+from agents.agent1_faq.rag import (  # noqa: E402
+    FaqEmbeddingDimensionMismatchError,
+    get_chroma_client,
+    get_faq_collection,
+)
 
 DEFAULT_FAQ_PATH = _REPO_ROOT / "data" / "faq_docs" / "faq.json"
 
@@ -107,16 +114,93 @@ def load_faq_entries(faq_path: Path) -> list[dict]:
     return entries
 
 
+def _backup_chroma_store(resolved_dir: str) -> Optional[str]:
+    """Sauvegarde `chroma.sqlite3` avant toute suppression de collection.
+
+    Copie horodatée déposée À CÔTÉ du dossier de persistance, sous un nom en
+    `.sqlite3` — déjà couvert par `.gitignore` (`*.sqlite3`), donc jamais
+    commité par accident. Retourne le chemin de la sauvegarde, ou `None` si
+    le fichier source n'existe pas encore (première ingestion).
+    """
+    source = Path(resolved_dir) / "chroma.sqlite3"
+    if not source.exists():
+        return None
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    target = Path(resolved_dir).parent / f"chroma_backup_{stamp}.sqlite3"
+    shutil.copy2(source, target)
+    return str(target)
+
+
+def _replace_incompatible_collection(persist_dir: Optional[str], collection_name: Optional[str]) -> dict:
+    """Supprime UNIQUEMENT la collection FAQ devenue incompatible, après sauvegarde.
+
+    Contexte : le passage à `HashingBagOfWordsEmbedding` v2 (stemming léger +
+    1024 dimensions) rend inutilisable une collection créée par la v1
+    (`hashing-bag-of-words`, 256 dimensions). ChromaDB refuse alors de
+    l'ouvrir, ce qui bloquait jusqu'ici la ré-ingestion elle-même : le seul
+    remède documenté était de supprimer le dossier à la main.
+
+    Ce que fait cette fonction, et surtout ce qu'elle NE fait PAS :
+    - elle appelle `client.delete_collection(name)` — l'API ChromaDB — donc
+      elle ne supprime QUE la collection nommée ;
+    - elle ne touche à aucune autre collection du même magasin vectoriel ;
+    - elle ne supprime jamais de dossier, de volume Docker, ni la moindre
+      base bancaire (`demo_bancaire.db`, `auth.db`, `chatbot.db`) ;
+    - elle sauvegarde `chroma.sqlite3` avant d'agir.
+
+    Justifiée ici et nulle part ailleurs : `ingest_faq` est, par définition,
+    la commande de RECONSTRUCTION explicite de l'index. La détection reste
+    stricte partout ailleurs (`rag.get_faq_collection` continue de lever).
+    """
+    resolved_dir = rag._resolve_persist_dir(persist_dir) if persist_dir else rag.DEFAULT_PERSIST_DIR
+    resolved_name = collection_name or rag.DEFAULT_COLLECTION_NAME
+
+    backup_path = _backup_chroma_store(resolved_dir)
+
+    client = get_chroma_client(persist_dir)
+    try:
+        client.delete_collection(name=resolved_name)
+    except Exception as exc:  # noqa: BLE001 — frontière SDK : collection absente ou déjà supprimée
+        raise FaqValidationError(
+            f"Impossible de supprimer la collection incompatible '{resolved_name}' "
+            f"dans {resolved_dir} : {exc}"
+        ) from exc
+
+    # Le cache de vérification de `rag` porte sur (dossier, nom) : il doit être
+    # oublié, sans quoi la collection recréée serait considérée comme déjà
+    # validée alors qu'elle vient de changer.
+    rag._VERIFIED_COLLECTIONS.discard((resolved_dir, resolved_name))
+
+    return {
+        "rebuilt": True,
+        "collection_name": resolved_name,
+        "persist_dir": resolved_dir,
+        "backup_path": backup_path,
+    }
+
+
 def ingest_faq(
     faq_path: Optional[Path] = None,
     persist_dir: Optional[str] = None,
     collection_name: Optional[str] = None,
 ) -> dict:
-    """Ingère `faq.json` dans ChromaDB. Idempotent : ré-exécutable sans créer de doublon."""
+    """Ingère `faq.json` dans ChromaDB. Idempotent : ré-exécutable sans créer de doublon.
+
+    Si la collection existante a été créée par une version PRÉCÉDENTE de
+    l'embedding, elle est automatiquement sauvegardée puis remplacée — voir
+    `_replace_incompatible_collection`. Le dictionnaire retourné porte alors
+    `rebuilt=True` et `backup_path`.
+    """
     faq_path = Path(faq_path) if faq_path else DEFAULT_FAQ_PATH
     entries = load_faq_entries(faq_path)
 
-    collection = get_faq_collection(persist_dir=persist_dir, collection_name=collection_name)
+    rebuild_info: dict = {"rebuilt": False, "backup_path": None}
+    try:
+        collection = get_faq_collection(persist_dir=persist_dir, collection_name=collection_name)
+    except FaqEmbeddingDimensionMismatchError:
+        rebuild_info = _replace_incompatible_collection(persist_dir, collection_name)
+        collection = get_faq_collection(persist_dir=persist_dir, collection_name=collection_name)
 
     existing_ids = set(collection.get(include=[])["ids"])
     current_ids = {entry["id"] for entry in entries}
@@ -141,6 +225,8 @@ def ingest_faq(
         "added_or_updated": len(entries),
         "removed": len(stale_ids),
         "collection_count": collection.count(),
+        "rebuilt": rebuild_info["rebuilt"],
+        "backup_path": rebuild_info["backup_path"],
     }
 
 
@@ -164,6 +250,12 @@ def main() -> None:
     except FaqValidationError as exc:
         print(f"Erreur de validation de faq.json : {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
+
+    if stats.get("rebuilt"):
+        print("Collection incompatible détectée   : reconstruite avec l'embedding courant")
+        if stats.get("backup_path"):
+            print(f"Sauvegarde de l'ancien index       : {stats['backup_path']}")
+        print()
 
     print(f"FAQ source                        : {stats['faq_path']}")
     print(f"Entrées dans faq.json              : {stats['total_entries']}")

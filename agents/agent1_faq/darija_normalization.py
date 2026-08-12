@@ -150,6 +150,54 @@ _WORD_MAP: list[tuple[str, str]] = [
     # traduit suffit : `classify_personal_intent` ne cherche que la sous-chaine
     # "beneficiaire", peu importe le reste de la phrase (meme principe que les
     # autres entrees ci-dessous). ---
+    # -----------------------------------------------------------------------
+    # PLAFONDS DE CARTE et SÉLECTION DE COMPTE (darija arabe + Arabizi).
+    #
+    # Ces tokens manquaient : « ch7al nqder nkhless b carte », « شحال نقدر نسحب »
+    # ou « شنو هما سقوف البطاقة » n'étaient traduits que partiellement et
+    # tombaient en `assistant_explain`. Chaque entrée pointe vers la forme
+    # française EXACTE déjà reconnue par la détection de champs de carte.
+    #
+    # Les formes composées sont placées avant leurs fragments : `_WORD_MAP` est
+    # trié par longueur décroissante, mais les écrire dans cet ordre garde le
+    # fichier lisible.
+    # -----------------------------------------------------------------------
+    ("شنو هما", "quels sont"),
+    ("chno homa", "quels sont"),
+    ("سقوف البطاقة", "plafonds de ma carte"),
+    ("سقف البطاقة", "plafond de ma carte"),
+    ("سقوف", "plafonds"),
+    ("سقف", "plafond"),
+    ("s9ouf", "plafonds"),
+    ("sqouf", "plafonds"),
+    ("s9af", "plafond"),
+    ("بالبطاقة", "avec ma carte"),
+    ("البطاقة", "carte"),
+    ("b carte", "avec ma carte"),
+    ("b lkarta", "avec ma carte"),
+    ("blkarta", "avec ma carte"),
+    ("lkarta", "carte"),
+    ("nkhelles", "payer"),
+    ("nkhalles", "payer"),
+    ("nkhless", "payer"),
+    ("khalles", "payer"),
+    ("نخلص", "payer"),
+    ("الأداء", "paiement"),
+    ("الاداء", "paiement"),
+    ("ns7eb", "retirer"),
+    ("nsheb", "retirer"),
+    ("ns7ab", "retirer"),
+    ("نسحب", "retirer"),
+    ("السحب", "retrait"),
+    ("nqder", "je peux"),
+    ("n9dar", "je peux"),
+    # --- Sélection explicite d'un compte pour le RIB ---
+    ("الحساب الجاري", "compte courant"),
+    ("حساب التوفير", "compte epargne"),
+    ("compte tawfir", "compte epargne"),
+    ("l7sab jari", "compte courant"),
+    ("الريب", "rib"),
+    ("ريب", "rib"),
     ("البنيفيسيار", "beneficiaires"),
     ("الحساب الجاري", "compte courant"),
     ("حساب التوفير", "compte epargne"),
@@ -275,6 +323,67 @@ _WORD_MAP: list[tuple[str, str]] = [
     ("الحالة", "etat"),
     ("akhir", "dernier"),
     ("آخر", "dernier"),
+    # -----------------------------------------------------------------------
+    # Identifiants bancaires : RIB, IBAN, numéro de compte.
+    #
+    # Mesuré avant ajout : "chnahowa rib dyalti", "3tini rib dyali",
+    # "bghit iban dyali" et leurs équivalents arabes tombaient tous en
+    # `faq_generale`, et la recherche RAG renvoyait une réponse sans rapport
+    # (délai d'exécution d'un virement).
+    #
+    # Les possessifs composés produisent "mon RIB"/"mon IBAN" — et non
+    # "rib mon" — car `_PERSONAL_DATA_PATTERNS` et
+    # `_ACCOUNT_IDENTIFIER_PATTERNS` raisonnent sur la forme française.
+    # -----------------------------------------------------------------------
+    # --- Verbes et périodes manquants, mesurés en échec de bout en bout ---
+    # "werini akher 5 operations" et "ch7al dkhel l compte courant had simana"
+    # n'étaient ni normalisés ni routés correctement.
+    ("werini", "montre-moi"),
+    ("wrini", "montre-moi"),
+    ("warini", "montre-moi"),
+    # "mes dernieres" (et non "dernier") : le possessif est nécessaire pour
+    # que `\bmes\b[\w\s]{0,20}\boperations?\b` reconnaisse la demande comme
+    # personnelle — sans lui, "werini akher 5 operations" partait en FAQ.
+    ("akher", "mes dernieres"),
+    ("dkhel lia", "est entre"),
+    ("dkhel l", "est entre"),
+    ("dkhel", "est entre"),
+    ("had simana", "cette semaine"),
+    ("had l simana", "cette semaine"),
+    ("simana lli fatet", "semaine derniere"),
+    ("lbareh", "hier"),
+    ("lbare7", "hier"),
+    # Période « mois dernier » en Arabizi (l'équivalent arabe existait déjà).
+    ("chher lli fat", "mois dernier"),
+    ("chhar lli fat", "mois dernier"),
+    ("rib dyali", "mon rib"),
+    ("rib dyalti", "mon rib"),
+    ("iban dyali", "mon iban"),
+    ("iban dyalti", "mon iban"),
+    ("numero compte dyali", "mon numero de compte"),
+    ("nomero compte dyali", "mon numero de compte"),
+    ("dyalti", "mon"),
+    # Interrogatifs darija ("c'est quoi", "quel est").
+    ("chnahowa", "quel est"),
+    ("chnahia", "quelle est"),
+    ("chno howa", "quel est"),
+    ("achno", "quel est"),
+    ("chnou", "quel est"),
+    ("chno", "quel est"),
+    ("nomero", "numero"),
+    # --- Équivalents en écriture arabe ---
+    ("الريب ديالي", "mon rib"),
+    ("الايبان ديالي", "mon iban"),
+    ("الإيبان ديالي", "mon iban"),
+    ("رقم الحساب ديالي", "mon numero de compte"),
+    ("رقم الحساب", "numero de compte"),
+    ("الريب", "rib"),
+    ("الايبان", "iban"),
+    ("الإيبان", "iban"),
+    ("شنو هو", "quel est"),
+    ("شنو هي", "quelle est"),
+    ("شنو", "quel est"),
+    ("رقم", "numero"),
 ]
 _WORD_MAP.sort(key=lambda item: -len(item[0]))
 

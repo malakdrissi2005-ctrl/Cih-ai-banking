@@ -1,0 +1,29 @@
+{
+  "_commentaire": "Référentiel de noms marocains courants pour la génération des clients de démonstration. Données ENTIÈREMENT FICTIVES : aucune personne réelle n'est visée, aucune combinaison n'est reprise d'une source existante. Utilisé exclusivement par scripts/seed_demo_database.py.",
+  "prenoms_feminins": [
+    "Amina", "Fatima", "Khadija", "Salma", "Imane", "Nadia", "Sanaa", "Hafsa",
+    "Meryem", "Zineb", "Loubna", "Ghita", "Hind", "Asmae", "Rania", "Soukaina",
+    "Nawal", "Btissam", "Chaimae", "Oumaima", "Yasmine", "Hajar", "Rim", "Sara",
+    "Kenza", "Lamia", "Widad", "Siham", "Naima", "Dounia"
+  ],
+  "prenoms_masculins": [
+    "Youssef", "Mehdi", "Omar", "Karim", "Rachid", "Hamza", "Anas", "Bilal",
+    "Yassine", "Ayoub", "Reda", "Soufiane", "Ismail", "Adil", "Nabil", "Tarik",
+    "Zakaria", "Othmane", "Amine", "Hicham", "Jamal", "Khalid", "Mounir",
+    "Abdellah", "Said", "Marouane", "Ilyas", "Badr", "Walid", "Hassan"
+  ],
+  "noms_famille": [
+    "Alaoui", "Bennani", "Cherkaoui", "Drissi", "El Amrani", "Fassi", "Ghazi",
+    "Haddad", "Idrissi", "Jaidi", "Kabbaj", "Lahlou", "Mansouri", "Naciri",
+    "Ouazzani", "Rifai", "Sebti", "Tazi", "Berrada", "Chraibi", "Benjelloun",
+    "El Fassi", "Guessous", "Hakimi", "Iraqi", "Kettani", "Lamrani", "Moutawakil",
+    "Nejjar", "Ouali", "Qadiri", "Sqalli", "Tahiri", "Bouzoubaa", "Belkacem",
+    "Amrani", "Bourkia", "Chakir", "Daoudi", "Errami", "Filali", "Gharbi",
+    "Hilali", "Jebli", "Khattabi", "Loudiyi", "Mrabet", "Nassiri", "Ouadghiri",
+    "Skalli"
+  ],
+  "villes": [
+    "Casablanca", "Rabat", "Marrakech", "Fès", "Tanger", "Agadir", "Meknès",
+    "Oujda", "Kénitra", "Tétouan"
+  ]
+}

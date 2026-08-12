@@ -30,7 +30,29 @@ questions bancaires, appelé en premier dans le graphe pour toute question non
 sensible et non conversationnelle, structurellement avant
 `classification.classify_intent` :
 
-    START → security_guard → conversational_understanding → llm_router → classify_fallback → route_decision
+    START → security_guard → personal_entity_guard → conversational_understanding
+          → llm_router → classify_fallback → route_decision
+
+ORDRE DE PRIORITÉ DES INTENTIONS (du plus fort au plus faible) :
+
+    1. Security Guard              — virement / action de compte, 100% déterministe
+    2. Entité personnelle précise  — `personal_entity_guard`, décision FINALE
+    3. Repli personnel générique   — entité + possession sans sous-intention précise
+    4. Messages conversationnels   — salutation, remerciement, small talk
+    5. FAQ publique / RAG          — dernier recours, jamais avant les précédents
+
+0bis. `personal_entity_guard` : deuxième étape déterministe pré-LLM. Reconnaît
+   de façon COMPOSITIONNELLE (`personal_entities.py`) une demande portant sur
+   une donnée bancaire personnelle — entité bancaire (rib, iban, numéro de
+   compte, solde, opérations…) combinée à un marqueur de possession (mon, ma,
+   mes, dyali, ديالي…). Sa décision est FINALE : Mistral ne la revoit jamais.
+   Corrige le défaut de hiérarchie qui faisait que « Quel est mon RIB ? »
+   recevait une définition publique, « je veux voir mon rib » une réponse sur
+   le mot de passe et « je veux connaitre mon rib » le solde total — trois
+   réponses différentes pour une même demande, alors que le classificateur
+   déterministe traitait correctement les trois mais n'avait aucune autorité
+   face au LLM. Une question de définition sans possessif (« Qu'est-ce qu'un
+   RIB ? ») n'est pas interceptée et poursuit vers la FAQ.
 
 1. `security_guard` : la SEULE étape strictement pré-LLM, évaluée pour
    *chaque* message avant tout appel réseau — une garde 100% déterministe,
@@ -113,13 +135,18 @@ from typing import Any, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from agents.agent1_faq import conversation_memory, llm_router, response_localizer
+from agents.agent1_faq import conversation_memory, llm_router, personal_entities, response_localizer
 from agents.agent1_faq.banking_answers import build_personal_data_answer
 from agents.agent1_faq.classification import _normalize, classify_intent, detect_sensitive_operation
 from agents.agent1_faq.conversational import classify_conversational
 from agents.agent1_faq.darija_normalization import normalize_darija_message
 from agents.agent1_faq.language_detection import detect_language
-from agents.agent1_faq.rag import get_faq_collection, search_faq, search_faq_candidates
+from agents.agent1_faq.rag import (
+    FaqEmbeddingDimensionMismatchError,
+    get_faq_collection,
+    search_faq,
+    search_faq_candidates,
+)
 
 REQUIRE_LOGIN_MESSAGE = "Pour consulter vos informations personnelles, vous devez d'abord vous connecter à votre espace client."
 
@@ -152,6 +179,11 @@ class Agent1State(TypedDict, total=False):
     # classify_fallback).
     intent: Optional[str]
     llm_parsed: Optional[dict]
+    # Entite bancaire personnelle reconnue de facon deterministe par
+    # `_personal_entity_guard_node` (rib/iban, solde, transactions...), ou None.
+    # Purement informatif pour le diagnostic et les tests : la decision de
+    # routage est deja portee par `intent`.
+    personal_entity: Optional[str]
     requires_auth: bool
     # Résultat de `_mentions_own_card`, calculé par `_route_decision_node`
     # uniquement quand `intent == "card_query"` — DOIT être déclaré ici : une
@@ -206,11 +238,126 @@ def _security_guard_node(state: Agent1State) -> dict:
         "detected_language": language,
         "intent": sensitive_intent,
         "llm_parsed": None,
+        "personal_entity": None,
     }
 
 
 def _after_security_guard(state: Agent1State) -> str:
-    return "route_decision" if state.get("intent") is not None else "conversational_understanding"
+    return "route_decision" if state.get("intent") is not None else "personal_entity_guard"
+
+
+# Entité reconnue -> intention personnelle à imposer QUAND, et seulement quand,
+# la chaîne de classification a conclu « question publique ».
+#
+# Le veto ne réécrit jamais une intention personnelle déjà correcte : Mistral
+# garde la main sur le vocabulaire (`balance_query`, `card_query`…) et le repli
+# déterministe garde son bucket générique `personal_data`. Le contrat de
+# `POST /api/chat` est donc inchangé dans tous les cas où il était déjà juste.
+#
+# `account_identifiers` n'a pas d'équivalent dans le vocabulaire Mistral : il
+# passe par `personal_data`, dont `banking_answers.classify_personal_intent`
+# tire ensuite la sous-intention précise.
+_ENTITY_VETO_INTENT = {
+    personal_entities.ACCOUNT_IDENTIFIERS: "personal_data",
+    personal_entities.BALANCE: "personal_data",
+    personal_entities.TRANSACTIONS: "personal_data",
+    personal_entities.BENEFICIARIES: "personal_data",
+    # Les deux entités carte passent aussi par `personal_data` : c'est
+    # l'étiquette que produisait déjà le repli déterministe pour ces messages,
+    # et `_route_decision_node` la traite comme exigeant une session. Émettre
+    # `card_query` ici changerait la valeur du champ `intent` renvoyé par
+    # `POST /api/chat` sans rien apporter.
+    personal_entities.CARD_NUMBER: "personal_data",
+    personal_entities.CARD_INFORMATION: "personal_data",
+}
+
+
+# Entités dont le signal textuel est EXACT et sans ambiguïté : « rib », « iban »,
+# « numéro de carte ». Pour celles-ci, le veto s'impose même face à une autre
+# intention PERSONNELLE — c'était le bug n°2, Mistral répondant `balance_query`
+# sur « je veux connaitre mon rib » et l'utilisateur recevant son solde.
+#
+# Les entités plus floues (solde, opérations, bénéficiaires) restent soumises au
+# veto uniquement contre la FAQ : leur vocabulaire se recouvre, et l'étiquette
+# fine de Mistral y est souvent meilleure que la nôtre.
+_PRECISE_VETO_ENTITIES = {
+    personal_entities.ACCOUNT_IDENTIFIERS,
+    personal_entities.CARD_NUMBER,
+}
+
+# Étiquettes déjà correctes pour ces entités : le veto les laisse passer.
+# Pour `account_identifiers`, seul `personal_data` convient — c'est la seule
+# étiquette dont `banking_answers` tire la sous-intention `account_identifiers`.
+# Toute autre intention personnelle (`balance_query` en tête) est précisément
+# l'erreur à corriger.
+_ENTITY_ACCEPTABLE_INTENTS = {
+    personal_entities.ACCOUNT_IDENTIFIERS: {"personal_data"},
+    personal_entities.CARD_NUMBER: {"personal_data", "card_query"},
+}
+
+
+def _apply_personal_veto(state, intent):
+    """Empêche une demande personnelle reconnue de finir en FAQ/RAG.
+
+    Retourne l'intention inchangée sauf si le message porte une entité
+    bancaire possédée ET que l'intention proposée est publique — c'est
+    exactement le cas qui produisait les trois réponses erronées sur le RIB.
+    """
+    entite = state.get("personal_entity")
+    if not entite:
+        return intent
+    if entite in _PRECISE_VETO_ENTITIES:
+        # Le veto corrige une famille ERRONÉE ; il ne renomme pas une étiquette
+        # déjà correcte. Si Mistral a bien reconnu `card_query` sur une demande
+        # de numéro de carte, on la conserve — la protection, elle, est de
+        # toute façon appliquée plus loin de façon déterministe.
+        if intent in _ENTITY_ACCEPTABLE_INTENTS[entite]:
+            return intent
+        return _ENTITY_VETO_INTENT[entite]
+    if intent in (None, "faq_generale"):
+        return _ENTITY_VETO_INTENT.get(entite, "personal_data")
+    return intent
+
+
+def _personal_entity_guard_node(state: Agent1State) -> dict:
+    """PRIORITÉ 2 — reconnaissance déterministe et compositionnelle d'une
+    demande de donnée bancaire personnelle, évaluée AVANT `llm_router`.
+
+    RAISON D'ÊTRE — trois formulations équivalentes donnaient trois réponses
+    différentes (« je veux voir mon rib » -> FAQ mot de passe, « je veux
+    connaitre mon rib » -> solde total, « Quel est mon RIB ? » -> définition
+    publique). Le classificateur déterministe répondait pourtant correctement
+    aux trois : le défaut n'était pas le vocabulaire mais la hiérarchie. Mistral
+    étant le classificateur principal, aucune règle déterministe ne pouvait le
+    contredire, et une phrase bien écrite pouvait être moins bien comprise
+    qu'une phrase fautive tombée dans le repli.
+
+    Ce nœud rétablit l'ordre : entité bancaire + marqueur de possession donne
+    une décision FINALE (`personal_entities.resolve`), que Mistral ne revoit
+    jamais. Une question de définition sans possessif n'est pas capturée ici et
+    poursuit son chemin normal vers la FAQ/RAG.
+
+    N'accorde AUCUN accès : il fixe uniquement le bucket d'intention.
+    L'authentification reste décidée par `_route_decision_node` à partir de la
+    seule session serveur (CLAUDE.md §2).
+    """
+    match = personal_entities.resolve(
+        state["normalized_message"], state.get("original_message")
+    )
+    return {"personal_entity": match.entity if match.is_personal else None}
+
+
+def _after_personal_entity_guard(state: Agent1State) -> str:
+    """Le flux continue TOUJOURS normalement.
+
+    Ce nœud est un VETO, pas un classificateur concurrent : il n'impose pas
+    d'étiquette d'intention, il retire seulement à la FAQ le droit de gagner
+    (voir `_after_llm_router`, `_classify_fallback_node` et `_route_edge`).
+    Mistral conserve ainsi la main sur le vocabulaire d'intention — le contrat
+    de `POST /api/chat` est inchangé — mais ne peut plus envoyer « mon RIB »
+    vers la documentation publique.
+    """
+    return "conversational_understanding"
 
 
 def _conversational_understanding_node(state: Agent1State) -> dict:
@@ -303,6 +450,11 @@ def _llm_router_node(state: Agent1State) -> dict:
         # dans ces cas), ou intention "unclear" -> classify_fallback tranche.
         intent = None
 
+    # VETO : Mistral peut se tromper de famille (il répondait `faq_search` ou
+    # `balance_query` sur « je veux voir mon rib »). Une demande portant une
+    # entité bancaire possédée ne peut jamais partir en FAQ.
+    intent = _apply_personal_veto(state, intent)
+
     return {"intent": intent, "llm_parsed": llm_parsed}
 
 
@@ -321,7 +473,11 @@ def _classify_fallback_node(state: Agent1State) -> dict:
     `security_guard`, avant tout appel LLM.
     """
     fallback_intent = classify_intent(state["normalized_message"])
-    return {"intent": fallback_intent}
+    # Même veto que ci-dessus : « chhal 3andi f l7sab » ou « combien jai » ne
+    # sont reconnus par aucun motif de `classification.py` et repartaient en
+    # FAQ, alors que la composition entité + possession les identifie
+    # clairement comme des questions personnelles.
+    return {"intent": _apply_personal_veto(state, fallback_intent)}
 
 
 # Intentions (préservées telles quelles depuis Mistral, ou le bucket
@@ -390,7 +546,16 @@ def _route_decision_node(state: Agent1State) -> dict:
     is_authenticated = bool(state.get("session_info", {}).get("is_authenticated", False))
 
     if intent == "card_query":
-        is_personal_card_query = _requests_personal_card_info(state["normalized_message"])
+        # Une demande de numéro de carte reconnue par le garde déterministe est
+        # personnelle par construction : « je veux les 16 chiffres de ma carte »
+        # ne contient aucun des mots-clés de `_requests_personal_card_info` et
+        # repartait donc en FAQ « perte de carte » au lieu du refus attendu.
+        is_personal_card_query = _requests_personal_card_info(
+            state["normalized_message"]
+        ) or state.get("personal_entity") in (
+            personal_entities.CARD_NUMBER,
+            personal_entities.CARD_INFORMATION,
+        )
         requires_auth = is_personal_card_query and not is_authenticated
         return {"requires_auth": requires_auth, "card_query_is_personal": is_personal_card_query}
 
@@ -417,6 +582,13 @@ def _route_edge(state: Agent1State) -> str:
             route = "answer_faq"
     elif intent in _AUTH_REQUIRED_INTENTS:
         route = "require_login" if state["requires_auth"] else "answer_personal_data"
+    elif state.get("personal_entity"):
+        # Dernier filet du veto : quelle que soit l'intention retenue en amont,
+        # une demande portant une entité bancaire possédée ne part JAMAIS vers
+        # ChromaDB. `requires_auth` est recalculé ici car `_route_decision_node`
+        # a raisonné sur une intention publique.
+        is_authenticated = bool(state.get("session_info", {}).get("is_authenticated", False))
+        route = "answer_personal_data" if is_authenticated else "require_login"
     else:
         route = "answer_faq"
 
@@ -470,8 +642,31 @@ def _merge_faq_candidates(collection: Any, queries: list[str], top_k: int) -> li
     return sorted(best_by_question.values(), key=lambda c: c["distance"] if c["distance"] is not None else float("inf"))
 
 
+def _resolve_faq_collection(state: Agent1State) -> Any:
+    """Collection ChromaDB à interroger, ou `None` si elle est inutilisable.
+
+    Un index créé par une version précédente de l'embedding (voir
+    `rag.FaqEmbeddingDimensionMismatchError`) ne doit PAS faire échouer la
+    requête : la FAQ répond alors `NO_FAQ_MESSAGE`, exactement comme lorsque
+    la collection est vide. Les autres chemins de l'Agent 1 (données
+    personnelles, refus d'opération sensible, salutations) n'utilisent jamais
+    ChromaDB et restent intacts.
+
+    L'erreur est déjà journalisée en amont par
+    `app/routers/chat.py::get_faq_collection_dependency` ; ce repli couvre les
+    appels directs à `run_agent1` (scripts, tests, outils).
+    """
+    collection = state.get("collection")
+    if collection is not None:
+        return collection
+    try:
+        return get_faq_collection()
+    except FaqEmbeddingDimensionMismatchError:
+        return None
+
+
 def _answer_faq_node(state: Agent1State) -> dict:
-    collection = state.get("collection") or get_faq_collection()
+    collection = _resolve_faq_collection(state)
     language = state.get("detected_language", "fr")
     use_llm_router = state.get("use_llm_router", False)
     original = state["original_message"]
@@ -487,7 +682,11 @@ def _answer_faq_node(state: Agent1State) -> dict:
     # choisir l'un ou l'autre — aucun des deux seul ne suffit toujours sur cet
     # embedding. Échec de `extract_faq_topic` -> repli garanti sur `normalized`
     # seul, exactement comme avant.
-    if not use_llm_router:
+    if collection is None:
+        # Index vectoriel inutilisable : aucun candidat, on retombe sur le
+        # message "aucune réponse trouvée" ci-dessous plutôt que de planter.
+        candidates = []
+    elif not use_llm_router:
         top_match = search_faq(collection, normalized)
         candidates = [top_match] if top_match else []
     else:
@@ -544,12 +743,21 @@ def _service_unavailable_node(state: Agent1State) -> dict:
 def _answer_personal_data_node(state: Agent1State) -> dict:
     user_id = state.get("session_info", {}).get("user_id")
     language = state.get("detected_language", "fr")
+    # Sur une entité au signal exact (rib/iban, numéro de carte), la sortie de
+    # Mistral est volontairement ignorée pour le CHOIX DE L'OUTIL : la laisser
+    # décider rejouerait le bug n°2 (`balance_query` sur « mon rib » renvoyant
+    # le solde). La sous-intention est alors tranchée par
+    # `classify_personal_intent`, purement déterministe.
+    llm_parsed = state.get("llm_parsed")
+    if state.get("personal_entity") in _PRECISE_VETO_ENTITIES:
+        llm_parsed = None
+
     answer = build_personal_data_answer(
         state["normalized_message"],
         user_id,
         banking_db_path=state.get("banking_db_path"),
         language=language,
-        llm_parsed=state.get("llm_parsed"),
+        llm_parsed=llm_parsed,
     )
     session_id = state.get("session_id")
     if session_id:
@@ -560,6 +768,7 @@ def _answer_personal_data_node(state: Agent1State) -> dict:
 def build_agent1_graph():
     graph = StateGraph(Agent1State)
     graph.add_node("security_guard", _security_guard_node)
+    graph.add_node("personal_entity_guard", _personal_entity_guard_node)
     graph.add_node("conversational_understanding", _conversational_understanding_node)
     graph.add_node("answer_conversational", _answer_conversational_node)
     graph.add_node("llm_router", _llm_router_node)
@@ -574,6 +783,11 @@ def build_agent1_graph():
     graph.add_conditional_edges(
         "security_guard",
         _after_security_guard,
+        {"route_decision": "route_decision", "personal_entity_guard": "personal_entity_guard"},
+    )
+    graph.add_conditional_edges(
+        "personal_entity_guard",
+        _after_personal_entity_guard,
         {"route_decision": "route_decision", "conversational_understanding": "conversational_understanding"},
     )
     graph.add_conditional_edges(

@@ -84,6 +84,29 @@ _DARIJA_LATN_MARKERS = [
     "akhir",
     "khsart",
     "wdart",
+    # --- Demandes d'identifiants bancaires (RIB/IBAN/n° de compte) ---
+    # "chnahowa rib dyalti" n'était détecté ni comme darija ni comme
+    # personnel : `dyalti` et `chnahowa` manquaient à cette liste, et
+    # `\bdyal\b` ne matche pas "dyalti" (frontière de mot).
+    #
+    # `rib` et `iban` ne sont VOLONTAIREMENT pas ajoutés ici : ce sont des
+    # mots utilisés tels quels en français ("Quel est mon RIB ?"), les
+    # ajouter ferait basculer une question française vers la normalisation
+    # darija et produirait une réponse en darija à un francophone.
+    "dyalti",
+    "werini",
+    "wrini",
+    "warini",
+    "akher",
+    "dkhel",
+    "simana",
+    "lbareh",
+    "chnahowa",
+    "chnahia",
+    "chno",
+    "achno",
+    "chnou",
+    "nomero",
 ]
 _DARIJA_LATN_PATTERN = re.compile(r"\b(" + "|".join(_DARIJA_LATN_MARKERS) + r")\b", re.IGNORECASE)
 

@@ -146,10 +146,20 @@ _DEFINITIONAL_QUESTION_PATTERNS = [
 ]
 
 
+# Un POSSESSIF annule toujours la lecture définitionnelle : une question qui
+# porte sur « MA carte » / « MON solde » parle des données du client, jamais
+# d'un concept — même formulée « c'est quoi le numéro de ma carte ? ».
+# Sans cette garde, le pattern `^c'est quoi l[ae']` interceptait cette
+# demande et la renvoyait vers la FAQ publique.
+_POSSESSIVE_MARKER_PATTERN = re.compile(r"\b(mon|ma|mes)\b")
+
+
 def _is_definitional_question(normalized_text: str) -> bool:
     """Détecte une question de définition/vocabulaire bancaire — voir
     commentaire de `_DEFINITIONAL_QUESTION_PATTERNS`. Déterministe, aucun appel
     LLM, utilisée uniquement par `classify_intent`."""
+    if _POSSESSIVE_MARKER_PATTERN.search(normalized_text):
+        return False
     return any(pattern.search(normalized_text) for pattern in _DEFINITIONAL_QUESTION_PATTERNS)
 
 # Signalement d'incident d'accès/blocage de COMPTE (ex. "mon compte est
@@ -364,11 +374,49 @@ _PERSONAL_DATA_PATTERNS = [
         # "ai-je", ou qualificatif "disponible"/"restant") — jamais le mot nu
         # "montant", "somme", "avoir" ou "mouvement", qui apparaissent
         # légitimement dans des questions publiques.
+        # --- Identifiants bancaires : RIB, IBAN, numéro de compte ---
+        # Absents jusqu'ici de toute liste : "Quel est mon RIB ?" tombait en
+        # `faq_generale` et la recherche RAG renvoyait une réponse sans
+        # rapport (délai d'exécution d'un virement). Ce sont pourtant des
+        # DONNÉES PERSONNELLES, qui exigent une session.
+        #
+        # `\brib\b` et `\biban\b` sont sûrs malgré la FAQ publique réelle
+        # « Qu'est-ce qu'un RIB et à quoi sert-il ? » : le garde
+        # `_is_definitional_question` ci-dessus l'intercepte avant d'arriver
+        # ici (tournure « qu'est-ce qu'un », sans possessif). Vérifié :
+        # `iban` et « numéro de compte » n'apparaissent dans aucune FAQ.
+        r"\brib\b",
+        r"\biban\b",
+        r"\bnumero\b.{0,20}\bcomptes?\b",
+        r"\bcomptes?\b.{0,20}\bnumero\b",
+        r"\bcoordonnees bancaires\b",
+        r"\bdomiciliation bancaire\b",
+        # Demande du NUMÉRO DE CARTE : doit atteindre `personal_data` pour
+        # être interceptée par la protection dédiée de `banking_answers.py`
+        # (`card_number_redirect`). Avant ajout, "Donne-moi mon numéro de carte
+        # complet" tombait en `faq_generale` — aucun pattern ne le couvrait
+        # ("de carte" et non "ma carte") — et recevait donc une réponse FAQ
+        # arbitraire au lieu d'un refus explicite.
+        # 0 collision vérifiée sur les 100 FAQ réelles (le seul "numéro" du
+        # corpus est "numéro de téléphone", sans le mot "carte").
+        r"\bnumero\b.{0,20}\bcartes?\b",
+        r"\bcartes?\b.{0,20}\bnumero\b",
+        # « combien j'ai … » sans le mot « solde » ni « mon compte » : c'est la
+        # forme normalisée de « ch7al 3ndi f l7sab » / « شحال عندي فالحساب ».
+        # Sans ce pattern, une question de solde en darija partait en FAQ.
+        r"\bcombien\b[\w\s']{0,15}\bj'ai\b",
         r"\bmon avoir\b",
         r"\bmontant (disponible|restant)\b",
         r"\bsomme\b[\w\s]{0,15}\bdisponible\b",
         r"\bai-je encore\b",
         r"\bmes\b[\w\s]{0,20}\bmouvements?\b",
+        # Requêtes transactionnelles filtrées : retraits, sommes entrées,
+        # « ai-je reçu … ». Mesuré : elles tombaient en `faq_generale`.
+        r"\bmes\b[\w\s]{0,20}\bretraits?\b",
+        r"\bai-je recu\b",
+        r"\bsommes?\b[\w\s]{0,20}\bentrees?\b",
+        r"\best entre\b",
+        r"\bdkhel\b",
         r"\bpaiements?\b[\w\s]{0,15}\bai-je\b",
     )
 ]

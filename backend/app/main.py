@@ -34,7 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import HTMLResponse  # noqa: E402
 
 from agents.agent1_faq import llm_router  # noqa: E402
-from app.routers import auth, chat  # noqa: E402
+from app.routers import auth, banking, chat  # noqa: E402
 
 _DEMO_HTML_PATH = Path(__file__).resolve().parent / "templates" / "demo.html"
 
@@ -69,6 +69,7 @@ app.add_middleware(
 
 app.include_router(chat.router)
 app.include_router(auth.router)
+app.include_router(banking.router)
 
 
 @app.get("/health", include_in_schema=False)

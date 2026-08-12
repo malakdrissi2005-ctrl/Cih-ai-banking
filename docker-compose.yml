@@ -59,6 +59,11 @@ services:
       # Conservation des donnees existantes — montees depuis l'hote, jamais
       # copiees dans l'image (voir backend/Dockerfile) : le conteneur lit et
       # ecrit exactement les memes fichiers que l'execution locale actuelle.
+      #
+      # `./backend/data` couvre a lui seul les trois bases de ce dossier :
+      # demo_bancaire.db (metier), chatbot.db (traces) et l'ancienne
+      # banking.db conservee en sauvegarde. Aucun volume supplementaire n'est
+      # necessaire — SQLite est un fichier, jamais un service a part.
       - ./auth.db:/app/auth.db
       - ./backend/data:/app/backend/data
       - ./chroma_db:/app/chroma_db

@@ -247,8 +247,95 @@ def seed_users(
     }
 
 
-def verify_credentials(username: str, password: str, db_path: Optional[str] = None) -> Optional[dict]:
-    """Retourne `{user_id, username}` si les identifiants sont corrects, sinon `None`."""
+# ---------------------------------------------------------------------------
+# Résolution de l'utilisateur — DEUX SOURCES, dans cet ordre.
+#
+# 1. `UTILISATEUR_E_BANKING`, dans la base bancaire métier (source cible).
+# 2. `users`, dans `auth.db` (LEGACY, conservée pour la transition).
+#
+# Pourquoi deux sources : la table `sessions` reste dans `auth.db` tandis que
+# les comptes d'accès migrent vers la base bancaire. SQLite n'autorisant pas de
+# `JOIN` entre fichiers, l'ancien `sessions JOIN users` est remplacé par deux
+# lectures et une liaison par valeur.
+#
+# Le repli legacy n'est pas de la dette : il garantit qu'une session déjà
+# émise, et que tout l'existant (scripts de seed, tests d'authentification),
+# continuent de fonctionner sans modification pendant la bascule. Il pourra
+# être retiré une fois `auth.db.users` définitivement abandonnée.
+#
+# bcrypt est obligatoire sur les DEUX chemins : `_verify_password` est la seule
+# porte de vérification, aucun mot de passe en clair n'est jamais comparé,
+# stocké ni journalisé.
+# ---------------------------------------------------------------------------
+
+
+def _verify_against_ebanking(login: str, password: str, banking_db_path: Optional[str]) -> Optional[dict]:
+    """Vérifie les identifiants contre `UTILISATEUR_E_BANKING`.
+
+    Accepte un identifiant de connexion OU une adresse e-mail (voir
+    `banking_db.find_ebanking_user_by_login`). Retourne `None` si la table
+    n'existe pas encore, si le compte est introuvable, si son
+    `statut_connexion` n'est pas actif, ou si le mot de passe est invalide —
+    dans tous ces cas l'appelant tentera la source legacy.
+    """
+    from app.banking import banking_db  # import local : évite tout cycle au chargement
+
+    try:
+        account = banking_db.find_ebanking_user_by_login(login, db_path=banking_db_path)
+    except Exception:  # noqa: BLE001 — base bancaire absente/illisible : on retombe sur le legacy
+        return None
+
+    if account is None:
+        return None
+    if account["statut_connexion"] != "actif":
+        return None
+    if not _verify_password(password, account["mot_de_passe_hash"]):
+        return None
+
+    banking_db.touch_last_login(account["id_utilisateur"], db_path=banking_db_path)
+    # `user_id` porte l'ID CLIENT (`CL0001`), jamais l'ID du compte d'accès
+    # (`EB0001`) : c'est `id_client` qui indexe toutes les lectures bancaires
+    # (`get_total_balance`, `get_transactions`, `get_card_for_customer`…).
+    # Sémantique inchangée par rapport au schéma précédent, où `usr_001`
+    # servait déjà à la fois d'identifiant d'utilisateur et de client.
+    return {"user_id": account["id_client"], "username": account["identifiant_connexion"]}
+
+
+def _resolve_user_from_ebanking(user_id: str, banking_db_path: Optional[str]) -> Optional[dict]:
+    """Résout l'utilisateur d'une session existante dans la base bancaire.
+
+    `user_id` est un ID CLIENT (voir la note dans `_verify_against_ebanking`),
+    la recherche se fait donc sur `id_client`.
+    """
+    from app.banking import banking_db
+
+    try:
+        account = banking_db.find_ebanking_user_by_client(user_id, db_path=banking_db_path)
+    except Exception:  # noqa: BLE001 — voir commentaire ci-dessus
+        return None
+
+    if account is None:
+        return None
+    return {"user_id": account["id_client"], "username": account["identifiant_connexion"]}
+
+
+def verify_credentials(
+    username: str,
+    password: str,
+    db_path: Optional[str] = None,
+    banking_db_path: Optional[str] = None,
+) -> Optional[dict]:
+    """Retourne `{user_id, username}` si les identifiants sont corrects, sinon `None`.
+
+    `username` accepte indifféremment un identifiant de connexion ou une
+    adresse e-mail lorsque le compte provient de `UTILISATEUR_E_BANKING`.
+    Signature rétro-compatible : les deux premiers paramètres sont inchangés.
+    """
+    account = _verify_against_ebanking(username, password, banking_db_path)
+    if account is not None:
+        return account
+
+    # --- Repli LEGACY : `auth.db.users` ---
     init_db(db_path)
     with closing(_get_connection(db_path)) as conn:
         row = conn.execute(
@@ -276,17 +363,27 @@ def create_session(user_id: str, minutes: Optional[int] = None, db_path: Optiona
     return {"session_id": session_id, "expires_at": expires_at.isoformat()}
 
 
-def get_valid_session(session_id: str, db_path: Optional[str] = None) -> Optional[dict]:
-    """Retourne `{session_id, user_id, username, expires_at}` si la session existe et n'a pas expiré."""
+def get_valid_session(
+    session_id: str,
+    db_path: Optional[str] = None,
+    banking_db_path: Optional[str] = None,
+) -> Optional[dict]:
+    """Retourne `{session_id, user_id, username, expires_at}` si la session existe et n'a pas expiré.
+
+    L'ancien `sessions JOIN users` a été scindé en deux lectures : la table
+    `sessions` reste dans `auth.db`, l'utilisateur est résolu dans la base
+    bancaire (`UTILISATEUR_E_BANKING`) puis, à défaut, dans `auth.db.users`.
+    Une session dont le `user_id` n'existe dans AUCUNE des deux sources est
+    considérée comme orpheline et rejetée — sémantique identique à celle du
+    JOIN précédent, qui ne renvoyait rien dans ce cas.
+
+    La table `sessions` n'ayant pas changé, tout `session_id` déjà émis reste
+    valide.
+    """
     init_db(db_path)
     with closing(_get_connection(db_path)) as conn:
         row = conn.execute(
-            """
-            SELECT sessions.session_id, sessions.expires_at, users.user_id, users.username
-            FROM sessions
-            JOIN users ON users.user_id = sessions.user_id
-            WHERE sessions.session_id = ?
-            """,
+            "SELECT session_id, user_id, expires_at FROM sessions WHERE session_id = ?",
             (session_id,),
         ).fetchone()
 
@@ -297,10 +394,21 @@ def get_valid_session(session_id: str, db_path: Optional[str] = None) -> Optiona
     if expires_at <= _utcnow():
         return None
 
+    account = _resolve_user_from_ebanking(row["user_id"], banking_db_path)
+    if account is None:
+        # --- Repli LEGACY : `auth.db.users` ---
+        with closing(_get_connection(db_path)) as conn:
+            legacy = conn.execute(
+                "SELECT user_id, username FROM users WHERE user_id = ?", (row["user_id"],)
+            ).fetchone()
+        if legacy is None:
+            return None
+        account = {"user_id": legacy["user_id"], "username": legacy["username"]}
+
     return {
         "session_id": row["session_id"],
-        "user_id": row["user_id"],
-        "username": row["username"],
+        "user_id": account["user_id"],
+        "username": account["username"],
         "expires_at": row["expires_at"],
     }
 

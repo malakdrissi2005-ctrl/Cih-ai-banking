@@ -243,6 +243,67 @@ Ces éléments desktop ne constituent pas une deuxième application : ils prése
 
 ---
 
+## 13bis\. Données bancaires réelles — `GET /api/banking/overview`
+
+Une fois le client authentifié, le tableau de bord n'affiche **plus aucune donnée simulée**. Les
+montants, comptes, transactions et informations de carte proviennent exclusivement de
+`GET /api/banking/overview`, appelé par `BankingAppProvider` avec le `session_id` de la session
+courante placé dans l'en-tête `Authorization` — **jamais dans l'URL**.
+
+**Raison d'être.** Avant cette intégration, le tableau de bord affichait `mockAccount`
+(15 420,50 MAD) pendant que l'assistant lisait la base réelle (106 318,39 MAD pour le client de
+démonstration). Les deux se contredisaient à l'écran. Le tableau de bord et l'assistant partagent
+désormais la même source pour la même session.
+
+**État exposé par `BankingAppProvider`** (identique pour le téléphone et le panneau desktop) :
+
+| Valeur | Contenu |
+| :---- | :---- |
+| `overview` | Réponse complète, ou `null` |
+| `overviewStatus` | `idle` \| `loading` \| `ready` \| `error` |
+| `overviewError` | `unauthorized` \| `network` \| `invalid` |
+| `accounts` | Tous les comptes du client, dans l'ordre renvoyé par le backend |
+| `selectedAccountIndex`, `selectAccount` | Compte affiché par `AccountCard` |
+| `account` | Compte sélectionné, au format attendu par les composants existants |
+| `totalBalance` | Solde cumulé **tous comptes** — c'est le montant annoncé par l'assistant |
+| `card` | Carte masquée du client, ou `null` |
+| `transactions` | Transactions récentes, converties au contrat de `RecentTransactions` |
+| `retryOverview` | Relance le chargement avec la session courante |
+
+**Règles obligatoires :**
+
+- **Aucun repli sur les données simulées après authentification.** Si la requête échoue, les
+  panneaux affichent `OverviewStatusBanner` et **aucun montant**. Afficher un solde de
+  démonstration à la place d'un solde réel indisponible serait pris pour le vrai solde.
+  `mockAccount` et `mockTransactions` ne servent plus que sur l'écran public, avant connexion.
+- **Un seul chargement, deux panneaux.** Le téléphone et le panneau desktop lisent le même
+  `overviewStatus` et affichent ou masquent exactement les mêmes données au même instant (§5).
+- **Réponse obsolète ignorée.** Un jeton de course (`overviewRequestRef`) neutralise toute réponse
+  arrivant après une déconnexion ou une autre connexion : les données d'un client ne peuvent
+  jamais apparaître dans la session d'un autre.
+- **`401` ⇒ déconnexion.** Le `session_id` est retiré de `sessionStorage` et l'application repasse
+  en état non authentifié, plutôt que d'afficher un tableau de bord authentifié sans données.
+- **Déconnexion ⇒ effacement.** `overview`, les comptes, le total, la carte et la conversation
+  sont vidés ; la conversation contient elle aussi des données personnelles.
+- **Montants en chaîne décimale**, jamais en nombre flottant, jusqu'à l'affichage (`src/data/money.js`).
+- **Données jamais exposées** : le PAN complet, le CVV, le PIN et la clé technique `id_compte`
+  n'atteignent pas le frontend, le backend ne les renvoyant pas. Le RIB et l'IBAN complets, en
+  revanche, sont bien remis à leur propriétaire authentifié : ce sont ses propres coordonnées.
+- **Contrat de `RecentTransactions`** : `amount` est une chaîne décimale **non signée**, le sens
+  est porté par `direction` valant `'in'` ou `'out'`. Le backend parle `credit` / `debit` : la
+  traduction se fait une seule fois, dans `BankingAppProvider`.
+- **Aucun élément de repli après authentification.** Si le client n'a pas de carte, `BankCard`
+  n'est pas rendu — `mockCard` ne le remplace pas. Tant que le nom réel n'est pas connu, la
+  salutation « Bonjour … » n'est pas affichée plutôt que d'afficher un nom de démonstration.
+  En cas d'erreur, la colonne de visualisations complémentaires est masquée entièrement : ses
+  montants seraient sinon les seuls chiffres à l'écran et seraient pris pour les vrais.
+- La **répartition des dépenses** (`SpendingChart`) reste simulée : le backend n'expose pas encore
+  cette agrégation via cet endpoint. C'est le **seul** élément simulé subsistant après
+  authentification ; il porte à l'écran la mention « Répartition simulée — non issue de votre
+  compte » et n'apparaît que lorsque les données réelles sont chargées.
+
+---
+
 ## 14\. Assistant IA — un seul ChatWidget
 
 Il existe **un seul `ChatWidget`**, monté une seule fois dans `App`. Il n'existe ni deux instances de chat, ni deux fenêtres de chat indépendantes, ni ouverture locale propre à un panneau.
@@ -304,7 +365,9 @@ Chaque étape apparaît **simultanément** dans le téléphone et dans la vue de
 | `DesktopView` | Équivalent desktop de `PhonePreview` ; reçoit le même état partagé et rend `DesktopLoginView` ou `DesktopDashboard` selon l'écran actif | état partagé (lecture/écriture) | `src/components/DesktopView.jsx` |
 | `Sidebar` | Navigation verticale du dashboard desktop (adaptation de la navigation inférieure mobile) | `activeSection`, `onNavigate` | `src/components/desktop/Sidebar.jsx` |
 | `DesktopHeader` | En-tête du panneau desktop (salutation, messages, notifications) | `userName` | `src/components/desktop/DesktopHeader.jsx` |
-| `AccountCard` | Carte de compte et de solde, rendue à l'identique dans les deux panneaux à partir du même état | `account`, `balanceVisible`, `onToggleBalance` | `src/components/shared/AccountCard.jsx` |
+| `AccountCard` | Carte de compte et de solde, rendue à l'identique dans les deux panneaux à partir du même état ; affiche en complément le **total tous comptes** lorsqu'il diffère du compte sélectionné | `account`, `balanceVisible`, `onToggleBalance`, `totalBalance` (optionnel) | `src/components/shared/AccountCard.jsx` |
+| `AccountSelector` | Choix du compte affiché lorsque le client en détient plusieurs (y compris plusieurs du même type) ; masqué pour un client mono-compte | `accounts`, `selectedIndex`, `onSelect` | `src/components/shared/AccountSelector.jsx` |
+| `OverviewStatusBanner` | État de chargement des données bancaires réelles : squelette pendant le chargement, message et bouton « Réessayer » en cas d'échec. **Aucun montant simulé n'est affiché en repli** | `status`, `error`, `onRetry` | `src/components/shared/OverviewStatusBanner.jsx` |
 | `BankCard` | Visuel de carte bancaire fictive et masquée (desktop) | `cardData` | `src/components/desktop/BankCard.jsx` |
 | `RecentTransactions` | Liste des transactions récentes (mobile et desktop) | `transactions` | `src/components/shared/RecentTransactions.jsx` |
 | `QuickActions` | Six raccourcis bancaires (mobile et desktop) | `actions` | `src/components/shared/QuickActions.jsx` |
